@@ -20,7 +20,7 @@ import {
   typeLabels,
 } from './data/prices'
 
-const whatsappNumber = '5562992916364'
+const whatsappNumber = '5563992916364'
 
 const flavor = ref<Flavor>('tradicional')
 const puddingType = ref<PuddingType>('normal')
@@ -193,6 +193,11 @@ function openCheckoutPage() {
   }, 40)
 }
 
+function selectSize(nextSize: Size) {
+  size.value = nextSize
+  scrollToElement(flavorSection.value)
+}
+
 function selectFlavor(nextFlavor: Flavor) {
   flavor.value = nextFlavor
   scrollToElement(typeSection.value)
@@ -200,11 +205,6 @@ function selectFlavor(nextFlavor: Flavor) {
 
 function selectType(nextType: PuddingType) {
   puddingType.value = nextType
-  scrollToElement(sizeSection.value)
-}
-
-function selectSize(nextSize: Size) {
-  size.value = nextSize
 }
 
 function addToCart() {
@@ -227,7 +227,7 @@ onMounted(() => {
   window.setTimeout(() => {
     isLoading.value = false
     window.clearInterval(phraseTimer)
-    openOrderPage(flavorSection.value)
+    openOrderPage(sizeSection.value)
   }, 2600)
 })
 </script>
