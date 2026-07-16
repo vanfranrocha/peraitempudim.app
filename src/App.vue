@@ -22,6 +22,17 @@ import {
 
 const whatsappNumber = '5563992916364'
 
+type CartItem = {
+  id: number
+  flavor: Flavor
+  puddingType: PuddingType
+  size: Size
+  quantity: number
+  unitPrice: number
+  total: number
+  image: string
+}
+
 const flavor = ref<Flavor>('tradicional')
 const puddingType = ref<PuddingType>('normal')
 const size = ref<Size>('500ml')
@@ -37,7 +48,7 @@ const notes = ref('')
 const triedSubmit = ref(false)
 const isLoading = ref(true)
 const loadingPhraseIndex = ref(0)
-const itemAdded = ref(false)
+const cartItems = ref<CartItem[]>([])
 const currentPage = ref<'order' | 'details' | 'checkout'>('order')
 const flavorSection = ref<HTMLElement | null>(null)
 const typeSection = ref<HTMLElement | null>(null)
@@ -54,7 +65,8 @@ const maxDateIso = computed(() => {
   return date.toISOString().slice(0, 10)
 })
 const unitPrice = computed(() => prices[puddingType.value][flavor.value][size.value])
-const total = computed(() => unitPrice.value * quantity.value)
+const selectedItemTotal = computed(() => unitPrice.value * quantity.value)
+const total = computed(() => cartItems.value.reduce((sum, item) => sum + item.total, 0))
 function getDateError() {
   if (!desiredDate.value) return 'Escolha a data desejada para sua encomenda.'
   if (!/^\d{4}-\d{2}-\d{2}$/.test(desiredDate.value)) return 'Informe uma data válida.'
@@ -118,10 +130,11 @@ const deliveryOptions = [
 const selectedSizeImage = computed(() => sizeOptions.find((option) => option.value === size.value)?.image ?? pudding500Image)
 const canShowAddButton = computed(() => currentPage.value === 'order')
 const canShowSendButton = computed(() => currentPage.value === 'checkout' && itemAdded.value)
-const cartQuantity = computed(() => (itemAdded.value ? quantity.value : 0))
+const itemAdded = computed(() => cartItems.value.length > 0)
+const cartQuantity = computed(() => cartItems.value.reduce((sum, item) => sum + item.quantity, 0))
 
 const deliveryDetails = computed(() => {
-  if (deliveryMode.value === 'retirada') return ''
+  if (deliveryMode.value === 'retirada') return 'Retirada no local'
 
   const details = [
     neighborhood.value && `Bairro: ${neighborhood.value}`,
@@ -130,25 +143,32 @@ const deliveryDetails = computed(() => {
     complement.value && `Complemento: ${complement.value}`,
   ].filter(Boolean)
 
-  return details.length ? `\n${details.join('\n')}` : '\nEndereço a combinar.'
+  return details.length ? details.join('\n') : 'Endereço a combinar.'
 })
 
 const whatsappUrl = computed(() => {
   const observation = notes.value.trim() || 'Sem observações.'
-const message = `Olá! Quero fazer uma encomenda na Peraí, tem pudim! 🍮
+  const orderNumber = String(Date.now()).slice(-8)
+  const separator = '------------------------------'
+  const itemsSummary = cartItems.value
+    .map((item, index) =>
+      [
+        `*${index + 1}. Pudim ${flavorLabels[item.flavor]}*`,
+        `Tipo: ${typeLabels[item.puddingType]}`,
+        `Tamanho: ${sizeLabels[item.size]}`,
+        `Quantidade: ${item.quantity}`,
+        `Valor unitário: ${formatCurrency(item.unitPrice)}`,
+        `Subtotal: ${formatCurrency(item.total)}`,
+      ].join('\n'),
+    )
+    .join(`\n${separator}\n`)
 
-Nome: ${customerName.value.trim()}
-Sabor: ${flavorLabels[flavor.value]}
-Tipo: ${typeLabels[puddingType.value]}
-Tamanho: ${sizeLabels[size.value]}
-Quantidade: ${quantity.value}
-Valor unitário: ${formatCurrency(unitPrice.value)}
-Total estimado: ${formatCurrency(total.value)}
-Data desejada: ${formatDate(desiredDate.value)}
-Forma de recebimento: ${deliveryLabels[deliveryMode.value]}${deliveryDetails.value}
+  const deliveryBlock =
+    deliveryMode.value === 'entrega'
+      ? `*Forma de recebimento:* Entrega\n${deliveryDetails.value}\n*Taxa de entrega:* A confirmar`
+      : `*Forma de recebimento:* Retirada\n${deliveryDetails.value}`
 
-Observações:
-${observation}`
+  const message = `*Meu pedido #${orderNumber}*\n\n${itemsSummary}\n${separator}\n\n*Nome:* ${customerName.value.trim()}\n\n${separator}\n*Data desejada:* ${formatDate(desiredDate.value)}\n\n${separator}\n${deliveryBlock}\n\n${separator}\n*Observações:* ${observation}\n\n${separator}\n*Subtotal:* ${formatCurrency(total.value)}\n*Valor Total:* ${formatCurrency(total.value)}\n\nAguardo a confirmação da disponibilidade do pedido.\n\nObrigado!`
 
   return `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(message)}`
 })
@@ -208,9 +228,25 @@ function selectType(nextType: PuddingType) {
 }
 
 function addToCart() {
-  itemAdded.value = true
+  cartItems.value.push({
+    id: Date.now(),
+    flavor: flavor.value,
+    puddingType: puddingType.value,
+    size: size.value,
+    quantity: quantity.value,
+    unitPrice: unitPrice.value,
+    total: selectedItemTotal.value,
+    image: selectedSizeImage.value,
+  })
   triedSubmit.value = false
   openDetailsPage()
+}
+
+function removeCartItem(itemId: number) {
+  cartItems.value = cartItems.value.filter((item) => item.id !== itemId)
+  if (!cartItems.value.length) {
+    openOrderPage(sizeSection.value)
+  }
 }
 
 function confirmDetails() {
@@ -412,25 +448,36 @@ onMounted(() => {
             </div>
           </div>
 
-          <article class="cart-item cart-item--featured">
-            <img :src="selectedSizeImage" alt="" />
-            <div>
-              <strong>Pudim {{ flavorLabels[flavor] }}</strong>
-              <small>{{ typeLabels[puddingType] }} • {{ sizeLabels[size] }} • {{ quantity }} unidade(s)</small>
-              <b>{{ formatCurrency(total) }}</b>
-            </div>
-          </article>
+          <div class="cart-items-list">
+            <article v-for="item in cartItems" :key="item.id" class="cart-item cart-item--featured">
+              <img :src="item.image" alt="" />
+              <div>
+                <strong>Pudim {{ flavorLabels[item.flavor] }}</strong>
+                <small>{{ typeLabels[item.puddingType] }} • {{ sizeLabels[item.size] }} • {{ item.quantity }} unidade(s)</small>
+                <b>{{ formatCurrency(item.total) }}</b>
+              </div>
+              <button class="cart-item__remove" type="button" aria-label="Remover item" @click="removeCartItem(item.id)">
+                Remover
+              </button>
+            </article>
+          </div>
+
+          <button class="add-more-button" type="button" @click="openOrderPage(sizeSection)">
+            Adicionar outro pudim
+          </button>
         </section>
 
         <div ref="summarySection" class="summary-column">
           <OrderSummary
             :customer-name="customerName"
-            :flavor="flavorLabels[flavor]"
-            :type="typeLabels[puddingType]"
-            :size="sizeLabels[size]"
-            :quantity="quantity"
-            :unit-price="formatCurrency(unitPrice)"
-            :subtotal="formatCurrency(total)"
+            :items="cartItems.map((item) => ({
+              id: item.id,
+              name: `Pudim ${flavorLabels[item.flavor]}`,
+              details: `${typeLabels[item.puddingType]} • ${sizeLabels[item.size]}`,
+              quantity: item.quantity,
+              unitPrice: formatCurrency(item.unitPrice),
+              subtotal: formatCurrency(item.total),
+            }))"
             :date="formatDate(desiredDate)"
             :delivery="deliveryLabels[deliveryMode]"
             :total="formatCurrency(total)"
@@ -441,7 +488,7 @@ onMounted(() => {
       <div v-if="canShowAddButton" class="mobile-checkout mobile-checkout--add">
         <QuantityStepper v-model="quantity" :min="1" :max="20" />
         <button class="mobile-checkout__button" type="button" @click="addToCart">
-          Adicionar • {{ formatCurrency(total) }}
+          Adicionar • {{ formatCurrency(selectedItemTotal) }}
         </button>
       </div>
 

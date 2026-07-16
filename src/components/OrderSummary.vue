@@ -1,12 +1,14 @@
 <script setup lang="ts">
 defineProps<{
   customerName: string
-  flavor: string
-  type: string
-  size: string
-  quantity: number
-  unitPrice: string
-  subtotal: string
+  items: Array<{
+    id: number
+    name: string
+    details: string
+    quantity: number
+    unitPrice: string
+    subtotal: string
+  }>
   date: string
   delivery: string
   total: string
@@ -25,29 +27,13 @@ defineProps<{
         <dt>Nome</dt>
         <dd>{{ customerName || 'Não informado' }}</dd>
       </div>
-      <div>
-        <dt>Sabor</dt>
-        <dd>{{ flavor }}</dd>
-      </div>
-      <div>
-        <dt>Tipo</dt>
-        <dd>{{ type }}</dd>
-      </div>
-      <div>
-        <dt>Tamanho</dt>
-        <dd>{{ size }}</dd>
-      </div>
-      <div>
-        <dt>Quantidade</dt>
-        <dd>{{ quantity }}</dd>
-      </div>
-      <div>
-        <dt>Valor unitário</dt>
-        <dd>{{ unitPrice }}</dd>
-      </div>
-      <div>
-        <dt>Subtotal</dt>
-        <dd>{{ subtotal }}</dd>
+      <div v-for="item in items" :key="item.id" class="summary-card__item">
+        <dt>{{ item.name }}</dt>
+        <dd>
+          {{ item.details }}<br />
+          {{ item.quantity }} x {{ item.unitPrice }}<br />
+          {{ item.subtotal }}
+        </dd>
       </div>
       <div>
         <dt>Data desejada</dt>
