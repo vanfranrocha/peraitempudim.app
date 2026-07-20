@@ -30,6 +30,91 @@ export const prices: Record<PuddingType, Record<Flavor, Record<Size, number>>> =
   },
 }
 
+
+export type PromotionProductKey = 'normal_tradicional_180ml' | 'normal_tradicional_500ml' | 'normal_cafe_180ml' | 'normal_cafe_500ml' | 'zero_tradicional_180ml' | 'zero_tradicional_500ml' | 'zero_cafe_180ml' | 'zero_cafe_500ml'
+
+export const promotion = {
+  active: true,
+  title: 'Pudins a partir de R$ 7,99',
+  subtitle: 'Pronta entrega em Goiânia',
+  badge: 'PRONTA ENTREGA',
+  urgency: 'Promoção por tempo limitado ou enquanto durar o estoque.',
+  products: {
+    normal_tradicional_180ml: {
+      flavor: 'tradicional' as const,
+      size: '180ml' as const,
+      type: 'normal' as const,
+      originalPrice: 12,
+      promotionalPrice: 7.99,
+      minimumDeliveryQuantity: 4,
+    },
+    normal_tradicional_500ml: {
+      flavor: 'tradicional' as const,
+      size: '500ml' as const,
+      type: 'normal' as const,
+      originalPrice: 30,
+      promotionalPrice: 19.99,
+      minimumDeliveryQuantity: 2,
+    },
+    normal_cafe_180ml: {
+      flavor: 'cafe' as const,
+      size: '180ml' as const,
+      type: 'normal' as const,
+      originalPrice: 14,
+      promotionalPrice: 9.99,
+      minimumDeliveryQuantity: 4,
+    },
+    normal_cafe_500ml: {
+      flavor: 'cafe' as const,
+      size: '500ml' as const,
+      type: 'normal' as const,
+      originalPrice: 32,
+      promotionalPrice: 22.99,
+      minimumDeliveryQuantity: 2,
+    },
+    zero_tradicional_180ml: {
+      flavor: 'tradicional' as const,
+      size: '180ml' as const,
+      type: 'zero' as const,
+      originalPrice: 14,
+      promotionalPrice: 9.99,
+      minimumDeliveryQuantity: 4,
+    },
+    zero_tradicional_500ml: {
+      flavor: 'tradicional' as const,
+      size: '500ml' as const,
+      type: 'zero' as const,
+      originalPrice: 32,
+      promotionalPrice: 24.99,
+      minimumDeliveryQuantity: 2,
+    },
+    zero_cafe_180ml: {
+      flavor: 'cafe' as const,
+      size: '180ml' as const,
+      type: 'zero' as const,
+      originalPrice: 16,
+      promotionalPrice: 11.99,
+      minimumDeliveryQuantity: 4,
+    },
+    zero_cafe_500ml: {
+      flavor: 'cafe' as const,
+      size: '500ml' as const,
+      type: 'zero' as const,
+      originalPrice: 35,
+      promotionalPrice: 27.99,
+      minimumDeliveryQuantity: 2,
+    },
+  } satisfies Record<PromotionProductKey, {
+    flavor: Flavor
+    size: Size
+    type: PuddingType
+    originalPrice: number
+    promotionalPrice: number
+    minimumDeliveryQuantity: number
+  }>,
+}
+
+
 export const flavorLabels: Record<Flavor, string> = {
   tradicional: 'Tradicional',
   cafe: 'Café',

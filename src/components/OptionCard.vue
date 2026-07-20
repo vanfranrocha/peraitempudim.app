@@ -5,6 +5,8 @@ defineProps<{
   icon?: string
   image?: string
   price?: string
+  originalPrice?: string
+  promotionalPrice?: string
   selected?: boolean
 }>()
 
@@ -28,7 +30,14 @@ defineEmits<{
     <span class="option-card__content">
       <strong>{{ title }}</strong>
       <small>{{ description }}</small>
-      <em v-if="price">{{ price }}</em>
+      <span v-if="promotionalPrice" class="option-card__promo-price">
+        <small>{{ price }}</small>
+        <span>
+          <s v-if="originalPrice">{{ originalPrice }}</s>
+          <em>{{ promotionalPrice }}</em>
+        </span>
+      </span>
+      <em v-else-if="price">{{ price }}</em>
     </span>
   </button>
 </template>
