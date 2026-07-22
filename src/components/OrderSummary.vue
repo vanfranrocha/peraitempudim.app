@@ -11,6 +11,10 @@ defineProps<{
   }>
   date: string
   delivery: string
+  subtotal: string
+  deliveryFee: string
+  deliveryDistance?: string
+  deliveryNote?: string
   total: string
 }>()
 </script>
@@ -42,6 +46,22 @@ defineProps<{
       <div>
         <dt>Recebimento</dt>
         <dd>{{ delivery }}</dd>
+      </div>
+      <div>
+        <dt>Subtotal</dt>
+        <dd>{{ subtotal }}</dd>
+      </div>
+      <div>
+        <dt>Entrega</dt>
+        <dd>
+          {{ deliveryFee }}
+          <small v-if="deliveryDistance">Entrega • aproximadamente {{ deliveryDistance }}</small>
+          <small v-if="deliveryNote">{{ deliveryNote }}</small>
+        </dd>
+      </div>
+      <div class="summary-card__total">
+        <dt>Total</dt>
+        <dd>{{ total }}</dd>
       </div>
     </dl>
   </aside>

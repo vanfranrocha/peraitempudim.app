@@ -2,6 +2,8 @@ export type PuddingType = 'normal' | 'zero'
 export type Flavor = 'tradicional' | 'cafe'
 export type Size = '180ml' | '500ml' | '1kg'
 export type DeliveryMode = 'retirada' | 'entrega'
+export type ProductOrderMode = 'ready' | 'scheduled'
+export type ProductKey = `${PuddingType}_${Flavor}_${Size}`
 
 export const prices: Record<PuddingType, Record<Flavor, Record<Size, number>>> = {
   normal: {
@@ -134,4 +136,74 @@ export const sizeLabels: Record<Size, string> = {
 export const deliveryLabels: Record<DeliveryMode, string> = {
   retirada: 'Retirada',
   entrega: 'Entrega',
+}
+
+
+export type PuddingPrices = typeof prices
+export type PromotionConfig = typeof promotion
+
+export type AppConfig = {
+  pickupLocation: string
+  availability: {
+    readyDelivery: boolean
+    scheduledOrders: boolean
+    openingHours: string
+    weeklyHours: Array<{ day: string; open: boolean; hours: string }>
+    availabilityMessage: string
+  }
+  productAvailability: Record<ProductKey, boolean>
+  productOrderModes: Record<ProductKey, Record<ProductOrderMode, boolean>>
+  prices: PuddingPrices
+  promotion: PromotionConfig
+}
+
+export const defaultAppConfig: AppConfig = {
+  pickupLocation: 'Setor Faiçalville, próximo ao Sesc Faiçalville',
+  availability: {
+    readyDelivery: true,
+    scheduledOrders: true,
+    openingHours: 'Segunda a sábado, das 9h às 18h',
+    weeklyHours: [
+      { day: 'Segunda', open: true, hours: '09:00 às 18:00' },
+      { day: 'Terça', open: true, hours: '09:00 às 18:00' },
+      { day: 'Quarta', open: true, hours: '09:00 às 18:00' },
+      { day: 'Quinta', open: true, hours: '09:00 às 18:00' },
+      { day: 'Sexta', open: true, hours: '09:00 às 18:00' },
+      { day: 'Sábado', open: true, hours: '09:00 às 14:00' },
+      { day: 'Domingo', open: false, hours: 'Fechado' },
+    ],
+    availabilityMessage: 'Pronta entrega sujeita à disponibilidade do dia.',
+  },
+
+  productAvailability: {
+    normal_tradicional_180ml: true,
+    normal_tradicional_500ml: true,
+    normal_tradicional_1kg: true,
+    normal_cafe_180ml: true,
+    normal_cafe_500ml: true,
+    normal_cafe_1kg: true,
+    zero_tradicional_180ml: true,
+    zero_tradicional_500ml: true,
+    zero_tradicional_1kg: true,
+    zero_cafe_180ml: true,
+    zero_cafe_500ml: true,
+    zero_cafe_1kg: true,
+  },
+
+  productOrderModes: {
+    normal_tradicional_180ml: { ready: true, scheduled: true },
+    normal_tradicional_500ml: { ready: true, scheduled: true },
+    normal_tradicional_1kg: { ready: false, scheduled: true },
+    normal_cafe_180ml: { ready: true, scheduled: true },
+    normal_cafe_500ml: { ready: true, scheduled: true },
+    normal_cafe_1kg: { ready: false, scheduled: true },
+    zero_tradicional_180ml: { ready: true, scheduled: true },
+    zero_tradicional_500ml: { ready: true, scheduled: true },
+    zero_tradicional_1kg: { ready: false, scheduled: true },
+    zero_cafe_180ml: { ready: true, scheduled: true },
+    zero_cafe_500ml: { ready: true, scheduled: true },
+    zero_cafe_1kg: { ready: false, scheduled: true },
+  },
+  prices,
+  promotion,
 }
