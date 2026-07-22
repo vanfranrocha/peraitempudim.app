@@ -4232,3 +4232,116 @@ a {
   width: 36px !important;
   height: 36px !important;
 }
+
+
+.admin-delivery-panel {
+  align-self: start;
+}
+
+.admin-delivery-ranges {
+  display: grid;
+  gap: 12px;
+}
+
+.admin-delivery-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 180px) minmax(120px, 180px) auto;
+  gap: 12px;
+  align-items: end;
+  border-radius: 18px;
+  padding: 14px;
+  background: #fffaf4;
+}
+
+.admin-delivery-row--time {
+  grid-template-columns: 120px minmax(180px, 1fr) 120px 120px 160px auto;
+}
+
+.admin-switch--compact {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  border: 1px solid rgba(122, 43, 22, 0.12);
+  border-radius: 14px;
+  padding: 0 10px;
+  background: var(--white);
+}
+
+.admin-switch--compact input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--brown-coffee);
+}
+
+.admin-switch--compact strong {
+  color: var(--brown-dark);
+  font-size: 0.86rem;
+}
+
+.admin-delivery-row .admin-order-delete {
+  min-height: 44px;
+}
+
+@media (max-width: 980px) {
+  .admin-delivery-row,
+  .admin-delivery-row--time {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .admin-delivery-row,
+  .admin-delivery-row--time {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+.admin-nav-icon {
+  display: grid;
+  width: 34px !important;
+  height: 34px;
+  flex: 0 0 34px;
+  place-items: center;
+  border-radius: 12px;
+  background: #fff7ef;
+  color: rgba(122, 43, 22, 0.72);
+  text-align: center;
+  transition: background 180ms ease, color 180ms ease, transform 180ms ease;
+}
+
+.admin-nav-icon svg {
+  width: 21px;
+  height: 21px;
+}
+
+.admin-nav-icon path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.admin-sidebar__nav button.active .admin-nav-icon {
+  background: var(--brown-coffee);
+  color: #fff3e8;
+}
+
+.admin-sidebar__nav button:hover .admin-nav-icon {
+  transform: translateY(-1px);
+}
+
+@media (max-width: 760px) {
+  .admin-nav-icon {
+    width: 30px !important;
+    height: 30px;
+    flex-basis: 30px;
+  }
+
+  .admin-nav-icon svg {
+    width: 19px;
+    height: 19px;
+  }
+}

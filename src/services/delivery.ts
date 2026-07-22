@@ -57,6 +57,9 @@ function estimateGoianiaCoordinates(address: string) {
   return match?.coordinates ?? null
 }
 
+export type DeliveryRangeInput = { maxDistance: number; price: number }
+export type DeliveryTimeSurchargeInput = { active: boolean; start: string; end: string; extraPrice: number }
+
 export const deliveryRanges = [
   { maxDistance: 3, price: 6 },
   { maxDistance: 6, price: 8 },
@@ -64,9 +67,38 @@ export const deliveryRanges = [
   { maxDistance: 12, price: 15 },
 ] as const
 
-export function getDeliveryFee(distanceKm: number) {
-  const range = deliveryRanges.find((item) => distanceKm <= item.maxDistance)
-  return range?.price ?? null
+function timeToMinutes(value: string) {
+  const [hours, minutes] = value.split(':').map(Number)
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) return null
+  return hours * 60 + minutes
+}
+
+function isNowWithinRange(start: string, end: string, date = new Date()) {
+  const startMinutes = timeToMinutes(start)
+  const endMinutes = timeToMinutes(end)
+  if (startMinutes === null || endMinutes === null) return false
+
+  const nowMinutes = date.getHours() * 60 + date.getMinutes()
+  if (startMinutes <= endMinutes) return nowMinutes >= startMinutes && nowMinutes <= endMinutes
+  return nowMinutes >= startMinutes || nowMinutes <= endMinutes
+}
+
+export function getDeliveryTimeSurcharge(surcharges: DeliveryTimeSurchargeInput[] = [], date = new Date()) {
+  return surcharges
+    .filter((item) => item.active && isNowWithinRange(item.start, item.end, date))
+    .reduce((sum, item) => sum + Number(item.extraPrice || 0), 0)
+}
+
+export function getDeliveryFee(
+  distanceKm: number,
+  ranges: DeliveryRangeInput[] = [...deliveryRanges],
+  surcharges: DeliveryTimeSurchargeInput[] = [],
+  date = new Date(),
+) {
+  const sortedRanges = [...ranges].sort((a, b) => a.maxDistance - b.maxDistance)
+  const range = sortedRanges.find((item) => distanceKm <= Number(item.maxDistance))
+  if (!range) return null
+  return Number(range.price) + getDeliveryTimeSurcharge(surcharges, date)
 }
 
 export function normalizeCep(value: string) {

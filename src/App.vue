@@ -58,6 +58,12 @@ function mergeConfig(base: typeof defaultAppConfig, stored: Partial<typeof defau
     availability: { ...base.availability, ...stored.availability },
     productAvailability: { ...base.productAvailability, ...stored.productAvailability },
     productOrderModes: { ...base.productOrderModes, ...stored.productOrderModes },
+    deliveryPricing: {
+      ...base.deliveryPricing,
+      ...stored.deliveryPricing,
+      ranges: stored.deliveryPricing?.ranges ?? base.deliveryPricing.ranges,
+      timeSurcharges: stored.deliveryPricing?.timeSurcharges ?? base.deliveryPricing.timeSurcharges,
+    },
     prices: { ...base.prices, ...stored.prices },
     promotion: {
       ...base.promotion,
@@ -150,7 +156,7 @@ Complemento: Qd 121 LT 27`,
 const appConfig = ref(cloneConfig())
 const adminMode = ref(false)
 const adminLoggedIn = ref(false)
-const adminPage = ref<'dashboard' | 'settings' | 'orders'>('dashboard')
+const adminPage = ref<'dashboard' | 'settings' | 'orders' | 'delivery'>('dashboard')
 const adminSettingsTab = ref<'availability' | 'hours' | 'products'>('availability')
 const adminSearch = ref('')
 const adminProductSizeFilter = ref<Size | 'all'>('all')
@@ -507,11 +513,13 @@ const cartQuantity = computed(() => cartItems.value.reduce((sum, item) => sum + 
 const adminTitle = computed(() => {
   if (adminPage.value === 'dashboard') return 'Dashboard'
   if (adminPage.value === 'orders') return 'Pedidos'
+  if (adminPage.value === 'delivery') return 'Entrega'
   return 'Configurações'
 })
 const adminSubtitle = computed(() => {
   if (adminPage.value === 'dashboard') return 'Resumo rápido da loja, produtos e campanha.'
   if (adminPage.value === 'orders') return 'Pedidos enviados para o WhatsApp.'
+  if (adminPage.value === 'delivery') return 'Controle taxa por raio e adicionais por horário.'
   return 'Ajuste disponibilidade, horários e produtos.'
 })
 const adminOrdersTotal = computed(() => savedOrders.value.length)
@@ -600,7 +608,11 @@ async function calculateDeliveryFee() {
     if (latestDeliveryRequestId !== requestId) return
 
     const roundedDistance = Math.round(result.distanceKm * 10) / 10
-    const fee = getDeliveryFee(roundedDistance)
+    const fee = getDeliveryFee(
+      roundedDistance,
+      appConfig.value.deliveryPricing.ranges,
+      appConfig.value.deliveryPricing.timeSurcharges,
+    )
     deliveryDistanceKm.value = roundedDistance
     deliveryFee.value = fee
 
@@ -866,6 +878,33 @@ function clearSavedOrders() {
   adminError.value = 'Pedidos apagados.'
 }
 
+
+function addDeliveryRange() {
+  const lastRange = appConfig.value.deliveryPricing.ranges[appConfig.value.deliveryPricing.ranges.length - 1]
+  appConfig.value.deliveryPricing.ranges.push({
+    maxDistance: (lastRange?.maxDistance ?? 0) + 3,
+    price: lastRange?.price ?? 0,
+  })
+}
+
+function removeDeliveryRange(index: number) {
+  appConfig.value.deliveryPricing.ranges.splice(index, 1)
+}
+
+function addDeliveryTimeSurcharge() {
+  appConfig.value.deliveryPricing.timeSurcharges.push({
+    label: 'Novo horário',
+    active: true,
+    start: '18:00',
+    end: '21:00',
+    extraPrice: 0,
+  })
+}
+
+function removeDeliveryTimeSurcharge(index: number) {
+  appConfig.value.deliveryPricing.timeSurcharges.splice(index, 1)
+}
+
 function removeSavedOrder(orderId: string) {
   savedOrders.value = savedOrders.value.filter((order) => order.id !== orderId)
   persistSavedOrders()
@@ -988,13 +1027,16 @@ onMounted(() => {
         </div>
         <nav class="admin-sidebar__nav" aria-label="Menu do admin">
           <button type="button" :class="{ active: adminPage === 'dashboard' }" @click="adminPage = 'dashboard'">
-            <span>⌂</span> Dashboard
+            <span class="admin-nav-icon" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M6 14.5 16 6l10 8.5V26a2 2 0 0 1-2 2h-5v-8h-6v8H8a2 2 0 0 1-2-2V14.5Z"/><path d="M11 28h10"/></svg></span> Dashboard
           </button>
           <button type="button" :class="{ active: adminPage === 'settings' }" @click="adminPage = 'settings'">
-            <span>⚙</span> Configurações
+            <span class="admin-nav-icon" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M16 11a5 5 0 1 0 0 10 5 5 0 0 0 0-10Z"/><path d="M16 4v4M16 24v4M6.2 10.3l3.4 2M22.4 19.7l3.4 2M6.2 21.7l3.4-2M22.4 12.3l3.4-2"/></svg></span> Configurações
           </button>
           <button type="button" :class="{ active: adminPage === 'orders' }" @click="adminPage = 'orders'">
-            <span>▣</span> Pedidos
+            <span class="admin-nav-icon" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M9 6h14a2 2 0 0 1 2 2v18l-3-2-3 2-3-2-3 2-3-2-3 2V8a2 2 0 0 1 2-2Z"/><path d="M12 12h8M12 17h8M12 22h5"/></svg></span> Pedidos
+          </button>
+          <button type="button" :class="{ active: adminPage === 'delivery' }" @click="adminPage = 'delivery'">
+            <span class="admin-nav-icon" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M7 23a4 4 0 1 0 8 0M22 23a4 4 0 1 0 8 0"/><path d="M11 23h6l4-8h4l3 8"/><path d="M17 23l-3-7H9"/><path d="M21 15l-2-4h-4"/><path d="M23 11h4"/><path d="M8 19h4"/></svg></span> Entrega
           </button>
         </nav>
         <div class="admin-sidebar__footer">
@@ -1165,6 +1207,47 @@ onMounted(() => {
                   </div>
                 </div>
               </details>
+            </div>
+          </section>
+        </template>
+
+        <template v-else-if="adminPage === 'delivery'">
+          <section class="admin-card-panel admin-section admin-delivery-panel">
+            <div class="admin-card-panel__header">
+              <div>
+                <h2>Taxa por raio</h2>
+                <p>Defina o valor automático conforme a distância calculada. Acima do maior raio, fica como entrega a consultar.</p>
+              </div>
+              <button class="admin-ghost-button" type="button" @click="addDeliveryRange">Adicionar faixa</button>
+            </div>
+
+            <div class="admin-delivery-ranges">
+              <article v-for="(range, index) in appConfig.deliveryPricing.ranges" :key="`range-${index}`" class="admin-delivery-row">
+                <label class="admin-money-field"><span>Até km</span><div><b>km</b><input v-model.number="range.maxDistance" type="number" min="0" step="0.1" /></div></label>
+                <label class="admin-money-field"><span>Valor</span><div><b>R$</b><input v-model.number="range.price" type="number" min="0" step="0.01" /></div></label>
+                <button class="admin-order-delete" type="button" :disabled="appConfig.deliveryPricing.ranges.length <= 1" @click="removeDeliveryRange(index)">Remover</button>
+              </article>
+            </div>
+          </section>
+
+          <section class="admin-card-panel admin-section admin-delivery-panel">
+            <div class="admin-card-panel__header">
+              <div>
+                <h2>Adicional por horário</h2>
+                <p>Use para horários de maior demanda. O adicional é somado à faixa de distância quando ativo.</p>
+              </div>
+              <button class="admin-ghost-button" type="button" @click="addDeliveryTimeSurcharge">Adicionar horário</button>
+            </div>
+
+            <div class="admin-delivery-ranges">
+              <article v-for="(surcharge, index) in appConfig.deliveryPricing.timeSurcharges" :key="`surcharge-${index}`" class="admin-delivery-row admin-delivery-row--time">
+                <label class="admin-switch admin-switch--compact"><input v-model="surcharge.active" type="checkbox" /><span><strong>{{ surcharge.active ? 'Ativo' : 'Inativo' }}</strong></span></label>
+                <label class="field"><span>Nome</span><input v-model="surcharge.label" type="text" /></label>
+                <label class="field"><span>Início</span><input v-model="surcharge.start" type="time" /></label>
+                <label class="field"><span>Fim</span><input v-model="surcharge.end" type="time" /></label>
+                <label class="admin-money-field"><span>Adicional</span><div><b>R$</b><input v-model.number="surcharge.extraPrice" type="number" min="0" step="0.01" /></div></label>
+                <button class="admin-order-delete" type="button" @click="removeDeliveryTimeSurcharge(index)">Remover</button>
+              </article>
             </div>
           </section>
         </template>

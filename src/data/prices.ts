@@ -3,6 +3,9 @@ export type Flavor = 'tradicional' | 'cafe'
 export type Size = '180ml' | '500ml' | '1kg'
 export type DeliveryMode = 'retirada' | 'entrega'
 export type ProductOrderMode = 'ready' | 'scheduled'
+export type DeliveryRange = { maxDistance: number; price: number }
+export type DeliveryTimeSurcharge = { label: string; active: boolean; start: string; end: string; extraPrice: number }
+export type DeliveryPricingConfig = { ranges: DeliveryRange[]; timeSurcharges: DeliveryTimeSurcharge[] }
 export type ProductKey = `${PuddingType}_${Flavor}_${Size}`
 
 export const prices: Record<PuddingType, Record<Flavor, Record<Size, number>>> = {
@@ -153,6 +156,7 @@ export type AppConfig = {
   }
   productAvailability: Record<ProductKey, boolean>
   productOrderModes: Record<ProductKey, Record<ProductOrderMode, boolean>>
+  deliveryPricing: DeliveryPricingConfig
   prices: PuddingPrices
   promotion: PromotionConfig
 }
@@ -203,6 +207,18 @@ export const defaultAppConfig: AppConfig = {
     zero_cafe_180ml: { ready: true, scheduled: true },
     zero_cafe_500ml: { ready: true, scheduled: true },
     zero_cafe_1kg: { ready: false, scheduled: true },
+  },
+
+  deliveryPricing: {
+    ranges: [
+      { maxDistance: 3, price: 6 },
+      { maxDistance: 6, price: 8 },
+      { maxDistance: 9, price: 11 },
+      { maxDistance: 12, price: 15 },
+    ],
+    timeSurcharges: [
+      { label: 'Horário de pico', active: false, start: '18:00', end: '21:00', extraPrice: 3 },
+    ],
   },
   prices,
   promotion,
