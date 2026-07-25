@@ -10,6 +10,7 @@ defineProps<{
     subtotal: string
   }>
   date: string
+  time?: string
   delivery: string
   subtotal: string
   deliveryFee: string
@@ -42,6 +43,10 @@ defineProps<{
       <div>
         <dt>Data desejada</dt>
         <dd>{{ date || 'Não informada' }}</dd>
+      </div>
+      <div v-if="time">
+        <dt>Horário desejado</dt>
+        <dd>{{ time }}</dd>
       </div>
       <div>
         <dt>Recebimento</dt>

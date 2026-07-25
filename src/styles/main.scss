@@ -4464,3 +4464,33 @@ a {
 .free-shipping-inline-button:active {
   transform: translateY(1px);
 }
+
+.scheduled-fields {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) minmax(150px, 0.62fr);
+}
+
+.field select {
+  width: 100%;
+  min-height: 54px;
+  border: 1px solid #ead5c9;
+  border-radius: 14px;
+  padding: 0 14px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 700;
+}
+
+.field select:focus {
+  border-color: var(--caramel);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(197, 105, 18, 0.16);
+}
+
+@media (max-width: 520px) {
+  .scheduled-fields {
+    grid-template-columns: 1fr;
+  }
+}

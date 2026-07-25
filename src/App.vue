@@ -108,6 +108,7 @@ type SavedOrder = {
   customerName: string
   orderMode: string
   desiredDate: string
+  desiredTimeSlot?: string
   deliveryMode: DeliveryMode
   deliveryDetails: string
   deliveryFee: number | null
@@ -134,6 +135,7 @@ const initialSavedOrders: SavedOrder[] = [
     customerName: 'Ana Oliveira',
     orderMode: 'Pronta entrega',
     desiredDate: '21/07/2026',
+    desiredTimeSlot: '',
     deliveryMode: 'entrega',
     deliveryDetails: `Bairro: Goiânia
 Endereço: Av. Canaã
@@ -181,6 +183,7 @@ const quantity = ref(1)
 const orderMode = ref<OrderMode | null>(null)
 const customerName = ref('')
 const desiredDate = ref('')
+const desiredTimeSlot = ref('')
 const deliveryMode = ref<DeliveryMode>('retirada')
 const cep = ref('')
 const neighborhood = ref('')
@@ -217,6 +220,19 @@ const maxDateIso = computed(() => {
   date.setFullYear(date.getFullYear() + 1)
   return date.toISOString().slice(0, 10)
 })
+const scheduledTimeOptions = computed(() => {
+  if (orderMode.value !== 'scheduled' || !desiredDate.value) return []
+  const dayConfig = getOpeningHoursForDate(desiredDate.value)
+  if (!dayConfig?.open) return []
+  const range = parseHourRange(dayConfig.hours)
+  if (!range) return []
+
+  const slots: string[] = []
+  for (let start = range.start; start + 60 <= range.end; start += 60) {
+    slots.push(`${formatHour(start)} - ${formatHour(start + 60)}`)
+  }
+  return slots
+})
 const unitPrice = computed(() => getEffectivePrice(puddingType.value, flavor.value, size.value))
 const selectedOriginalPrice = computed(() => getPromotionalProduct(puddingType.value, flavor.value, size.value)?.originalPrice)
 const selectedPromotionLabel = computed(() => getPromotionalProduct(puddingType.value, flavor.value, size.value) ? 'Promoção pronta entrega' : '')
@@ -249,6 +265,8 @@ function getDateError() {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(desiredDate.value)) return 'Informe uma data válida.'
   if (desiredDate.value < todayIso.value) return 'Escolha uma data a partir de hoje.'
   if (desiredDate.value > maxDateIso.value) return 'Escolha uma data dentro dos próximos 12 meses.'
+  if (!scheduledTimeOptions.value.length) return 'Não há horários disponíveis para a data escolhida.'
+  if (!desiredTimeSlot.value) return 'Escolha o horário desejado para sua encomenda.'
   return ''
 }
 const dateError = computed(() => {
@@ -353,6 +371,8 @@ const formatDate = (value: string) => {
   return `${day}/${month}/${year}`
 }
 
+const formatDeliveryPeriod = (value: string) => value.replace(' - ', ' às ')
+
 function getPromotionProductKey(type: PuddingType, selectedFlavor: Flavor, selectedSize: Size) {
   if (!promotion.value.active || !promoQueryEnabled.value) return null
   const key = `${type}_${selectedFlavor}_${selectedSize}` as keyof typeof promotion.value.products
@@ -441,9 +461,23 @@ const readyDeliveryUnavailableText = computed(() => {
   return `Pronta entrega disponível hoje: ${dayConfig.hours}.`
 })
 
+const dayNames = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado']
+
 function getTodayOpeningHours() {
-  const dayNames = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado']
   return appConfig.value.availability.weeklyHours.find((day) => day.day === dayNames[new Date().getDay()])
+}
+
+function getOpeningHoursForDate(value: string) {
+  const [year, month, day] = value.split('-').map(Number)
+  if (!year || !month || !day) return null
+  const date = new Date(year, month - 1, day)
+  return appConfig.value.availability.weeklyHours.find((item) => item.day === dayNames[date.getDay()]) ?? null
+}
+
+function formatHour(totalMinutes: number) {
+  const hour = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+  return minutes ? `${hour}h${String(minutes).padStart(2, '0')}` : `${hour}h`
 }
 
 function parseHourRange(value: string) {
@@ -711,6 +745,13 @@ watch([deliveryMode, cep, address, number, neighborhood, city, state], () => {
   }, 550)
 })
 
+watch([desiredDate, scheduledTimeOptions], () => {
+  if (orderMode.value !== 'scheduled') return
+  if (!scheduledTimeOptions.value.includes(desiredTimeSlot.value)) {
+    desiredTimeSlot.value = scheduledTimeOptions.value[0] ?? ''
+  }
+})
+
 const deliveryDetails = computed(() => {
   if (deliveryMode.value === 'retirada') return `Local de retirada: ${pickupLocation.value}`
 
@@ -756,7 +797,7 @@ const whatsappUrl = computed(() => {
         ].filter(Boolean).join('\n')
       : `*Forma de entrega:* Retirada — grátis\n${deliveryDetails.value}`
 
-  const message = `Oi! Quero fazer este pedido \n\n*Meu pedido #${orderNumber}*\n\n${itemsSummary}\n${separator}\n\n*Nome:* ${customerName.value.trim()}\n\n${separator}\n*Tipo de pedido:* ${orderModeLabel.value}\n*Data desejada:* ${formatDate(effectiveDesiredDate.value)}\n\n${separator}\n${deliveryBlock}\n\n${separator}\n*Observações:* ${observation}\n\n${separator}\n*Subtotal:* ${formatCurrency(subtotal.value)}\n*Entrega:* ${deliveryFeeLabel.value}\n*Valor Total:* ${formatCurrency(total.value)}\n\nAguardo a confirmação da disponibilidade do pedido.\n\nObrigado!`
+  const message = `Oi! Quero fazer este pedido \n\n*Meu pedido #${orderNumber}*\n\n${itemsSummary}\n${separator}\n\n*Nome:* ${customerName.value.trim()}\n\n${separator}\n*Tipo de pedido:* ${orderModeLabel.value}\n*Data desejada:* ${formatDate(effectiveDesiredDate.value)}${orderMode.value === 'scheduled' ? `\n*Período de entrega:* ${formatDeliveryPeriod(desiredTimeSlot.value)}` : ''}\n\n${separator}\n${deliveryBlock}\n\n${separator}\n*Observações:* ${observation}\n\n${separator}\n*Subtotal:* ${formatCurrency(subtotal.value)}\n*Entrega:* ${deliveryFeeLabel.value}\n*Valor Total:* ${formatCurrency(total.value)}\n\nAguardo a confirmação da disponibilidade do pedido.\n\nObrigado!`
 
   return `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(message)}`
 })
@@ -830,6 +871,9 @@ function selectOrderMode(nextMode: OrderMode) {
   if (nextMode === 'scheduled' && !appConfig.value.availability.scheduledOrders) return
   orderMode.value = nextMode
   if (nextMode === 'ready') {
+    desiredDate.value = todayIso.value
+    desiredTimeSlot.value = ''
+  } else if (!desiredDate.value) {
     desiredDate.value = todayIso.value
   }
   openOrderPage(sizeSection.value)
@@ -910,7 +954,7 @@ function confirmDetails() {
 
 
 
-function loadSavedOrders() {
+function loadSavedOrders(options: { persistInitialOrders?: boolean } = { persistInitialOrders: true }) {
   try {
     const stored = window.localStorage.getItem(ordersStorageKey)
     const storedOrders = stored ? JSON.parse(stored) as SavedOrder[] : []
@@ -919,10 +963,10 @@ function loadSavedOrders() {
       ...storedOrders,
       ...initialSavedOrders.filter((order) => !storedIds.has(order.id)),
     ]
-    persistSavedOrders()
+    if (options.persistInitialOrders) persistSavedOrders()
   } catch {
     savedOrders.value = [...initialSavedOrders]
-    persistSavedOrders()
+    if (options.persistInitialOrders) persistSavedOrders()
   }
 }
 
@@ -938,6 +982,7 @@ function saveCurrentOrder() {
     customerName: customerName.value.trim(),
     orderMode: orderModeLabel.value,
     desiredDate: formatDate(effectiveDesiredDate.value),
+    desiredTimeSlot: orderMode.value === 'scheduled' ? desiredTimeSlot.value : '',
     deliveryMode: deliveryMode.value,
     deliveryDetails: deliveryDetails.value,
     deliveryFee: deliveryMode.value === 'entrega' ? deliveryFee.value : 0,
@@ -1036,6 +1081,16 @@ onMounted(() => {
     adminUser.value = adminCredentials.user
     adminLoggedIn.value = true
   }
+
+  window.addEventListener('storage', (event) => {
+    if (event.key === ordersStorageKey) loadSavedOrders({ persistInitialOrders: false })
+  })
+  window.addEventListener('focus', () => {
+    if (adminMode.value) loadSavedOrders({ persistInitialOrders: false })
+  })
+  document.addEventListener('visibilitychange', () => {
+    if (adminMode.value && !document.hidden) loadSavedOrders({ persistInitialOrders: false })
+  })
   promoQueryEnabled.value = new URLSearchParams(window.location.search).get('promo') === 'true'
   shouldHighlightPromotion.value = promoQueryEnabled.value
 
@@ -1263,7 +1318,7 @@ onMounted(() => {
                   </div>
                   <div>
                     <span>{{ order.customerName }}</span>
-                    <small>{{ deliveryLabels[order.deliveryMode] }} • {{ order.desiredDate }}</small>
+                    <small>{{ deliveryLabels[order.deliveryMode] }} • {{ order.desiredDate }}<template v-if="order.desiredTimeSlot"> • {{ order.desiredTimeSlot }}</template></small>
                   </div>
                   <b>{{ formatCurrency(order.total) }}</b>
                   <button class="admin-order-delete" type="button" @click.prevent="removeSavedOrder(order.id)">Excluir</button>
@@ -1275,6 +1330,7 @@ onMounted(() => {
                     <div><small>Cliente</small><strong>{{ order.customerName }}</strong></div>
                     <div><small>Recebimento</small><strong>{{ deliveryLabels[order.deliveryMode] }}</strong></div>
                     <div><small>Data</small><strong>{{ order.desiredDate }}</strong></div>
+                    <div v-if="order.desiredTimeSlot"><small>Horário</small><strong>{{ order.desiredTimeSlot }}</strong></div>
                     <div><small>Entrega</small><strong>{{ order.deliveryFeeLabel }}</strong></div>
                   </div>
 
@@ -1669,18 +1725,27 @@ onMounted(() => {
             </label>
             <p v-if="customerNameError" id="customer-name-error" class="error-text">{{ customerNameError }}</p>
 
-            <label v-if="orderMode === 'scheduled'" class="field">
-              <span>Data desejada</span>
-              <input
-                v-model="desiredDate"
-                type="date"
-                required
-                :min="todayIso"
-                :max="maxDateIso"
-                :aria-invalid="Boolean(dateError)"
-                aria-describedby="date-error"
-              />
-            </label>
+            <div v-if="orderMode === 'scheduled'" class="scheduled-fields">
+              <label class="field">
+                <span>Data desejada</span>
+                <input
+                  v-model="desiredDate"
+                  type="date"
+                  required
+                  :min="todayIso"
+                  :max="maxDateIso"
+                  :aria-invalid="Boolean(dateError)"
+                  aria-describedby="date-error"
+                />
+              </label>
+              <label class="field">
+                <span>Horário desejado</span>
+                <select v-model="desiredTimeSlot" required :aria-invalid="Boolean(dateError)">
+                  <option value="" disabled>Selecione</option>
+                  <option v-for="option in scheduledTimeOptions" :key="option" :value="option">{{ option }}</option>
+                </select>
+              </label>
+            </div>
             <div v-else class="ready-date-note">
               <span>Pronta entrega</span>
               <strong>Receber/retirar hoje, {{ formatDate(todayIso) }}</strong>
@@ -1827,6 +1892,7 @@ onMounted(() => {
               subtotal: formatCurrency(item.total),
             }))"
             :date="formatDate(effectiveDesiredDate)"
+            :time="orderMode === 'scheduled' ? desiredTimeSlot : ''"
             :delivery="deliveryLabels[deliveryMode]"
             :subtotal="formatCurrency(subtotal)"
             :delivery-fee="deliveryFeeLabel"
