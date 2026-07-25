@@ -3068,11 +3068,12 @@ a {
   color: rgba(53, 23, 15, 0.68);
   font-weight: 700;
   line-height: 1.35;
+  font-size: 14px;
 }
 
 .delivery-status--available {
   border-color: rgba(20, 147, 123, 0.22);
-  background: rgba(20, 147, 123, 0.08);
+  background: #fff0d8;
 }
 
 .delivery-status--outside-area,
@@ -3188,7 +3189,7 @@ a {
   font-weight: 800;
 }
 
-.admin-order-card__header > span {
+.admin-order-card__header>span {
   border-radius: 999px;
   padding: 8px 12px;
   background: var(--brown-dark);
@@ -3267,6 +3268,7 @@ a {
 }
 
 @media (max-width: 520px) {
+
   .admin-order-card__header,
   .admin-order-items div,
   .admin-order-card__meta {
@@ -3433,7 +3435,7 @@ a {
   background: var(--white);
 }
 
-.admin-order-details > strong {
+.admin-order-details>strong {
   display: block;
   color: var(--brown-dark);
   font-family: 'Fraunces', Georgia, serif;
@@ -3441,6 +3443,7 @@ a {
 }
 
 @media (max-width: 760px) {
+
   .admin-order-stats,
   .admin-order-card__summary {
     grid-template-columns: 1fr;
@@ -3546,15 +3549,16 @@ a {
 }
 
 .admin-title-row,
-.admin-main > .admin-feedback,
-.admin-main > template,
-.admin-main > section,
+.admin-main>.admin-feedback,
+.admin-main>template,
+.admin-main>section,
 .admin-settings-layout,
 .admin-orders-panel {
   min-width: 0;
 }
 
 @media (max-width: 760px) {
+
   .admin-shell:has(.admin-dashboard-shell),
   .admin-dashboard-shell,
   .admin-main {
@@ -3651,13 +3655,13 @@ a {
   overscroll-behavior: contain;
 }
 
-.admin-content-scroll > .admin-title-row,
-.admin-content-scroll > .admin-feedback,
-.admin-content-scroll > .admin-metrics-grid,
-.admin-content-scroll > .admin-dashboard-grid,
-.admin-content-scroll > .admin-card-panel,
-.admin-content-scroll > .admin-settings-layout,
-.admin-content-scroll > .admin-orders-panel {
+.admin-content-scroll>.admin-title-row,
+.admin-content-scroll>.admin-feedback,
+.admin-content-scroll>.admin-metrics-grid,
+.admin-content-scroll>.admin-dashboard-grid,
+.admin-content-scroll>.admin-card-panel,
+.admin-content-scroll>.admin-settings-layout,
+.admin-content-scroll>.admin-orders-panel {
   min-width: 0;
 }
 
@@ -3763,7 +3767,7 @@ a {
   gap: 8px;
 }
 
-.admin-product-modes > span {
+.admin-product-modes>span {
   color: rgba(53, 23, 15, 0.68);
   font-size: 0.76rem;
   font-weight: 900;
@@ -3816,7 +3820,7 @@ a {
 }
 
 .admin-login-hero__brand,
-.admin-login-hero > div {
+.admin-login-hero>div {
   position: relative;
   z-index: 1;
 }
@@ -3867,7 +3871,7 @@ a {
   padding: 42px 20px;
 }
 
-.admin-login-form > img {
+.admin-login-form>img {
   width: 118px;
   justify-self: center;
 }
@@ -3984,7 +3988,7 @@ a {
   height: 48px !important;
 }
 
-.admin-product-card > img {
+.admin-product-card>img {
   width: 112px !important;
   height: 112px !important;
   border-radius: 16px !important;
@@ -4064,7 +4068,7 @@ a {
     grid-template-columns: 96px minmax(0, 1fr) !important;
   }
 
-  .admin-product-card > img {
+  .admin-product-card>img {
     width: 96px !important;
     height: 96px !important;
   }
@@ -4084,7 +4088,7 @@ a {
     gap: 10px !important;
   }
 
-  .admin-product-card > img {
+  .admin-product-card>img {
     width: 82px !important;
     height: 82px !important;
   }
@@ -4097,7 +4101,7 @@ a {
 
 .segmented-control__button:has(.segmented-control__icon) {
   display: flex;
-  min-height: 64px;
+  min-height: 52px;
   align-items: center;
   justify-content: center;
   gap: 9px;
@@ -4284,6 +4288,7 @@ a {
 }
 
 @media (max-width: 980px) {
+
   .admin-delivery-row,
   .admin-delivery-row--time {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -4291,6 +4296,7 @@ a {
 }
 
 @media (max-width: 560px) {
+
   .admin-delivery-row,
   .admin-delivery-row--time {
     grid-template-columns: 1fr;
@@ -4344,4 +4350,117 @@ a {
     width: 19px;
     height: 19px;
   }
+}
+
+
+.free-shipping-banner,
+.free-shipping-note,
+.mobile-checkout__shipping-note {
+  color: rgba(53, 23, 15, 0.72);
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.free-shipping-banner {
+  display: block;
+  margin-top: 10px;
+  border: 1px solid rgba(197, 105, 18, 0.18);
+  border-radius: 14px;
+  padding: 10px 12px;
+  background: #fff7ed;
+  font-size: 0.86rem;
+}
+
+.free-shipping-banner--success,
+.free-shipping-note--success {
+  color: #16745f;
+}
+
+.free-shipping-banner--success {
+  border-color: rgba(22, 116, 95, 0.2);
+  background: rgba(22, 116, 95, 0.08);
+}
+
+.free-shipping-note {
+  display: block;
+}
+
+.mobile-checkout__shipping-note {
+  grid-column: 1 / -1;
+  margin-bottom: -2px;
+  font-size: 0.78rem;
+}
+
+
+/* Stronger free-shipping callout. */
+.free-shipping-banner {
+  border-color: rgba(197, 105, 18, 0.42) !important;
+  background: linear-gradient(135deg, #fff0d8, #ffe2bc) !important;
+  color: #5a1f0f !important;
+  box-shadow: 0 12px 26px rgba(197, 105, 18, 0.16) !important;
+}
+
+.free-shipping-note {
+  color: #5a1f0f !important;
+  font-weight: 900 !important;
+}
+
+.mobile-checkout__shipping-note {
+  border-radius: 10px;
+  padding: 7px 9px;
+  background: #fff0d8;
+  color: #5a1f0f !important;
+  font-weight: 900 !important;
+}
+
+.free-shipping-banner--success {
+  border-color: rgba(22, 116, 95, 0.32) !important;
+  background: linear-gradient(135deg, rgba(22, 116, 95, 0.12), rgba(22, 116, 95, 0.2)) !important;
+  color: #16745f !important;
+}
+
+
+.free-shipping-banner {
+  display: grid !important;
+  gap: 10px !important;
+}
+
+.free-shipping-banner>span {
+  display: block;
+}
+
+.free-shipping-banner button {
+  min-height: 44px;
+  border: 0;
+  border-radius: 12px;
+  padding: 0 14px;
+  background: #6f2d1b;
+  color: var(--white);
+  font-weight: 950;
+  box-shadow: 0 10px 20px rgba(90, 31, 15, 0.2);
+}
+
+.free-shipping-banner button:active {
+  transform: translateY(1px);
+}
+
+.free-shipping-banner--success button {
+  display: none;
+}
+
+
+.free-shipping-inline-button {
+  width: 100%;
+  min-height: 42px;
+  border: 0;
+  border-radius: 12px;
+  padding: 0 14px;
+  background: #6f2d1b;
+  color: var(--white);
+  font-weight: 950;
+  box-shadow: 0 10px 20px rgba(90, 31, 15, 0.16);
+}
+
+.free-shipping-inline-button:active {
+  transform: translateY(1px);
 }

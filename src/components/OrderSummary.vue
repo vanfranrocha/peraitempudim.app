@@ -48,7 +48,7 @@ defineProps<{
         <dd>{{ delivery }}</dd>
       </div>
       <div>
-        <dt>Subtotal</dt>
+        <dt>Produtos</dt>
         <dd>{{ subtotal }}</dd>
       </div>
       <div>

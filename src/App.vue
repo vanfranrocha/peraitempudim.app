@@ -29,6 +29,13 @@ import {
   lookupCep,
   normalizeCep,
 } from './services/delivery'
+import {
+  FREE_SHIPPING_MAX_DISTANCE_KM,
+  FREE_SHIPPING_SMALL_ORDER_MAX_DISTANCE_KM,
+  getDisplayedShippingPrice,
+  getFreeShippingState,
+  getOrderTotal,
+} from './services/deliveryRules'
 
 const whatsappNumber = '5563992916364'
 const adminCredentials = { user: 'admin', password: 'Pudim@2026!Faicalville' }
@@ -187,7 +194,7 @@ const notes = ref('')
 const deliveryStatus = ref<DeliveryCalculationStatus>('idle')
 const deliveryMessage = ref('')
 const deliveryDistanceKm = ref<number | null>(null)
-const deliveryFee = ref<number | null>(null)
+const calculatedDeliveryFee = ref<number | null>(null)
 const triedSubmit = ref(false)
 const isLoading = ref(true)
 const loadingPhraseIndex = ref(0)
@@ -215,7 +222,26 @@ const selectedOriginalPrice = computed(() => getPromotionalProduct(puddingType.v
 const selectedPromotionLabel = computed(() => getPromotionalProduct(puddingType.value, flavor.value, size.value) ? 'Promoção pronta entrega' : '')
 const selectedItemTotal = computed(() => unitPrice.value * quantity.value)
 const subtotal = computed(() => cartItems.value.reduce((sum, item) => sum + item.total, 0))
-const total = computed(() => subtotal.value + (deliveryMode.value === 'entrega' ? deliveryFee.value ?? 0 : 0))
+const hasLargePuddingInCart = computed(() => cartItems.value.some((item) => item.size === '500ml'))
+const freeShippingRadiusLabel = computed(() => hasLargePuddingInCart.value ? FREE_SHIPPING_MAX_DISTANCE_KM : FREE_SHIPPING_SMALL_ORDER_MAX_DISTANCE_KM)
+const freeShippingState = computed(() =>
+  getFreeShippingState({
+    deliveryMode: deliveryMode.value,
+    productsSubtotal: subtotal.value,
+    deliveryDistanceKm: deliveryDistanceKm.value,
+    hasLargePudding: hasLargePuddingInCart.value,
+  }),
+)
+const isEligibleForFreeShipping = computed(() => freeShippingState.value.isEligibleForFreeShipping)
+const amountRemainingForFreeShipping = computed(() => freeShippingState.value.amountRemainingForFreeShipping)
+const deliveryFee = computed(() =>
+  getDisplayedShippingPrice({
+    deliveryMode: deliveryMode.value,
+    calculatedDeliveryFee: calculatedDeliveryFee.value,
+    isEligibleForFreeShipping: isEligibleForFreeShipping.value,
+  }),
+)
+const total = computed(() => getOrderTotal(subtotal.value, deliveryFee.value))
 const effectiveDesiredDate = computed(() => (orderMode.value === 'ready' ? todayIso.value : desiredDate.value))
 function getDateError() {
   if (orderMode.value === 'ready') return ''
@@ -276,12 +302,50 @@ const formatDistance = (value: number) =>
   `${value.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} km`
 
 const deliveryDistanceLabel = computed(() => (deliveryDistanceKm.value === null ? '' : formatDistance(deliveryDistanceKm.value)))
+function getEstimatedDeliveryTime(distanceKm: number) {
+  if (distanceKm <= 1) return '10 a 15 min'
+  if (distanceKm <= 3) return '15 a 20 min'
+  if (distanceKm <= 6) return '20 a 25 min'
+  if (distanceKm <= 9) return '30 a 35 min'
+  if (distanceKm <= 12) return '35 a 45 min'
+  return 'a consultar'
+}
+const deliveryTimeLabel = computed(() => (deliveryDistanceKm.value === null ? '' : getEstimatedDeliveryTime(deliveryDistanceKm.value)))
 const deliveryFeeLabel = computed(() => {
   if (deliveryMode.value === 'retirada') return 'Retirada — grátis'
+  if (isEligibleForFreeShipping.value) return 'Grátis'
   if (deliveryFee.value !== null) return formatCurrency(deliveryFee.value)
   if (deliveryStatus.value === 'outside-area') return 'Entrega a consultar'
   return 'A calcular'
 })
+
+const freeShippingSuggestionQuantity = computed(() => {
+  const referencePrice = getEffectivePrice('normal', 'tradicional', '180ml')
+  return Math.max(1, Math.ceil(amountRemainingForFreeShipping.value / referencePrice))
+})
+
+const freeShippingMessage = computed(() => {
+  if (deliveryMode.value !== 'entrega') return ''
+  if (!freeShippingState.value.hasMinimumSubtotal) {
+    const plural = freeShippingSuggestionQuantity.value > 1 ? 'pudins' : 'pudim'
+    return `🍮 Adicione + ${freeShippingSuggestionQuantity.value} ${plural} de 180 ml e ganhe frete grátis.`
+  }
+  if (freeShippingState.value.shouldValidateAddressForFreeShipping) {
+    return `Seu pedido já atingiu o valor mínimo para frete grátis. Informe o endereço para verificar se está dentro do raio de ${freeShippingRadiusLabel.value} km.`
+  }
+  if (freeShippingState.value.isEligibleForFreeShipping) {
+    return `Parabéns, seu pedido tem frete grátis 🎉`
+  }
+  if (freeShippingState.value.isOutsideFreeShippingRadius) {
+    return 'Este endereço está fora do raio de frete grátis. O valor da entrega foi calculado conforme a distância.'
+  }
+  return ''
+})
+const canShowFreeShippingSuggestionButton = computed(() =>
+  deliveryMode.value === 'entrega' &&
+  !freeShippingState.value.hasMinimumSubtotal &&
+  (deliveryStatus.value === 'available' || deliveryStatus.value === 'outside-area'),
+)
 
 const formatDate = (value: string) => {
   if (!value) return ''
@@ -551,7 +615,7 @@ function resetDeliveryCalculation(status: DeliveryCalculationStatus = 'idle', me
   deliveryStatus.value = status
   deliveryMessage.value = message
   deliveryDistanceKm.value = null
-  deliveryFee.value = null
+  calculatedDeliveryFee.value = null
 }
 
 function completeDeliveryAddress() {
@@ -614,7 +678,7 @@ async function calculateDeliveryFee() {
       appConfig.value.deliveryPricing.timeSurcharges,
     )
     deliveryDistanceKm.value = roundedDistance
-    deliveryFee.value = fee
+    calculatedDeliveryFee.value = fee
 
     if (fee === null) {
       deliveryStatus.value = 'outside-area'
@@ -623,7 +687,7 @@ async function calculateDeliveryFee() {
     }
 
     deliveryStatus.value = 'available'
-    deliveryMessage.value = `Entrega disponível • aproximadamente ${formatDistance(roundedDistance)}`
+    deliveryMessage.value = `Entrega estimada para sua região • ${getEstimatedDeliveryTime(roundedDistance)}`
   } catch {
     resetDeliveryCalculation('error', 'Não foi possível calcular a entrega agora. Confira o endereço ou tente novamente.')
   }
@@ -804,6 +868,31 @@ function addToCart() {
   triedSubmit.value = false
   quantity.value = 1
   openDetailsPage()
+}
+
+function addFreeShippingSuggestionToCart() {
+  const suggestedType: PuddingType = 'normal'
+  const suggestedFlavor: Flavor = 'tradicional'
+  const suggestedSize: Size = '180ml'
+  const suggestedQuantity = freeShippingSuggestionQuantity.value
+  if (suggestedQuantity <= 0) return
+  if (!isProductAvailable(suggestedType, suggestedFlavor, suggestedSize)) return
+
+  const suggestedUnitPrice = getEffectivePrice(suggestedType, suggestedFlavor, suggestedSize)
+  const suggestedPromotion = getPromotionalProduct(suggestedType, suggestedFlavor, suggestedSize)
+
+  cartItems.value.push({
+    id: Date.now(),
+    flavor: suggestedFlavor,
+    puddingType: suggestedType,
+    size: suggestedSize,
+    quantity: suggestedQuantity,
+    unitPrice: suggestedUnitPrice,
+    total: suggestedUnitPrice * suggestedQuantity,
+    image: getProductImage(suggestedSize),
+    originalUnitPrice: suggestedPromotion?.originalPrice,
+    promotionLabel: suggestedPromotion ? 'Promoção pronta entrega' : undefined,
+  })
 }
 
 function removeCartItem(itemId: number) {
@@ -1562,13 +1651,12 @@ onMounted(() => {
           <div class="section-heading">
             <div>
               <h2>Como você quer receber?</h2>
-              <small>data, retirada ou entrega</small>
             </div>
           </div>
 
           <div class="cart-form">
             <label class="field">
-              <span>Nome</span>
+              <span>Seu Nome</span>
               <input
                 v-model.trim="customerName"
                 type="text"
@@ -1622,14 +1710,16 @@ onMounted(() => {
                   @blur="fillAddressByCep"
                 />
               </label>
-              <label class="field field--wide">
-                <span>Endereço</span>
-                <input v-model="address" type="text" autocomplete="street-address" placeholder="Rua, avenida ou alameda" />
-              </label>
-              <label class="field">
-                <span>Número</span>
-                <input v-model="number" type="text" inputmode="numeric" autocomplete="address-line2" placeholder="Nº" />
-              </label>
+              <div class="delivery-city-row">
+                <label class="field">
+                  <span>Endereço</span>
+                  <input v-model="address" type="text" autocomplete="street-address" placeholder="Rua, avenida ou alameda" />
+                </label>
+                <label class="field">
+                  <span>Número</span>
+                  <input v-model="number" type="text" inputmode="numeric" autocomplete="address-line2" placeholder="Nº" />
+                </label>
+              </div>
               <label class="field">
                 <span>Bairro</span>
                 <input v-model="neighborhood" type="text" autocomplete="address-level2" />
@@ -1644,24 +1734,37 @@ onMounted(() => {
                   <input v-model="state" type="text" maxlength="2" autocomplete="address-level1" />
                 </label>
               </div>
-              <label class="field field--wide">
-                <span>Complemento opcional</span>
-                <input v-model="complement" type="text" placeholder="Apartamento, bloco, lote..." />
-              </label>
-              <label class="field field--wide">
-                <span>Ponto de referência opcional</span>
-                <input v-model="reference" type="text" placeholder="Próximo a..." />
-              </label>
-
-              <div
+                            <div
                 v-if="deliveryMessage || deliveryFee !== null"
                 class="delivery-status"
                 :class="`delivery-status--${deliveryStatus}`"
               >
-                <strong>{{ deliveryFeeLabel }}</strong>
-                <span v-if="deliveryDistanceLabel">Entrega • aproximadamente {{ deliveryDistanceLabel }}</span>
-                <small v-if="deliveryMessage">{{ deliveryMessage }}</small>
+                <strong>Entrega {{ deliveryFeeLabel }}</strong>
+                <span v-if="deliveryStatus === 'available' && deliveryTimeLabel">Entrega estimada para sua região • {{ deliveryTimeLabel }}</span>
+                <span v-else-if="deliveryDistanceLabel">Entrega • aproximadamente {{ deliveryDistanceLabel }}</span>
+                <small
+                  v-if="freeShippingMessage && (deliveryStatus === 'available' || deliveryStatus === 'outside-area')"
+                  class="free-shipping-note"
+                  :class="{ 'free-shipping-note--success': isEligibleForFreeShipping }"
+                >{{ freeShippingMessage }}</small>
+                <button
+                  v-if="canShowFreeShippingSuggestionButton"
+                  class="free-shipping-inline-button"
+                  type="button"
+                  @click="addFreeShippingSuggestionToCart"
+                >
+                  Adicionar {{ freeShippingSuggestionQuantity }} ao pedido
+                </button>
+                <small v-if="deliveryStatus !== 'available' && deliveryMessage">{{ deliveryMessage }}</small>
               </div>
+              <label class="field field--wide">
+                <span>Complemento (opcional)</span>
+                <input v-model="complement" type="text" placeholder="Apartamento, bloco, lote..." />
+              </label>
+              <label class="field field--wide">
+                <span>Ponto de referência (opcional)</span>
+                <input v-model="reference" type="text" placeholder="Próximo a..." />
+              </label>
               <p v-if="triedSubmit && deliveryMode === 'entrega' && !deliveryAddressComplete" class="error-text">
                 Informe CEP, endereço, número, bairro, cidade e UF para calcular a entrega.
               </p>
@@ -1751,8 +1854,9 @@ onMounted(() => {
       </div>
 
       <div v-if="currentPage === 'details' && itemAdded" class="mobile-checkout">
+        <small v-if="freeShippingMessage && deliveryMode === 'entrega' && (deliveryStatus === 'available' || deliveryStatus === 'outside-area')" class="mobile-checkout__shipping-note">{{ freeShippingMessage }}</small>
         <div>
-          <small>{{ deliveryMode === 'entrega' && deliveryFee !== null ? 'Total com entrega' : 'Total estimado' }}</small>
+          <small>{{ deliveryMode === 'entrega' && deliveryFee !== null ? (isEligibleForFreeShipping ? 'Total com frete grátis' : 'Total com entrega') : 'Total estimado' }}</small>
           <strong>{{ formatCurrency(total) }}</strong>
         </div>
         <button class="mobile-checkout__button" type="button" @click="confirmDetails">
