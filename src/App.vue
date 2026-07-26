@@ -1600,14 +1600,14 @@ onMounted(() => {
         </section>
 
         <section v-if="!promoQueryEnabled" class="panel start-panel">
-          <div class="section-heading">
+          <div class="section-heading tela-1">
             <div>
-              <h2>Como você quer pedir?</h2>
-              <small>escolha a disponibilidade</small>
+              <h2>Como você <br/>quer pedir?</h2>
+              <small>Escolha a opção que combina com você no momento.</small>
             </div>
           </div>
 
-          <div class="option-grid">
+          <div class="option-grid" style="margin-top: 16px;">
             <button class="option-card start-option" type="button" :disabled="!isReadyDeliveryOpenNow" @click="selectOrderMode('ready')">
               <span class="option-card__icon start-icon start-icon--ready" aria-hidden="true">
                 <svg viewBox="0 0 48 48" focusable="false">
@@ -1616,7 +1616,8 @@ onMounted(() => {
               </span>
               <span class="option-card__content">
                 <strong>Pronta entrega</strong>
-                <small>{{ isReadyDeliveryOpenNow ? 'Quero receber/retirar hoje' : readyDeliveryUnavailableText }}</small>
+                <small>Receba agora! Temos pudins disponíveis a pronta entrega.</small>
+                <small style="margin-top: 8px;">{{ isReadyDeliveryOpenNow ? 'Quero receber/retirar hoje' : readyDeliveryUnavailableText }}</small>
               </span>
             </button>
 
@@ -1631,7 +1632,7 @@ onMounted(() => {
               </span>
               <span class="option-card__content">
                 <strong>Encomendar</strong>
-                <small>Quero escolher uma data</small>
+                <small>Escolha a data e o horário ideais e faça seu pedido com antecedência.</small>
               </span>
             </button>
           </div>
