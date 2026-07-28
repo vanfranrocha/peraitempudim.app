@@ -1459,7 +1459,6 @@ a {
   left: max(14px, calc((100vw - 430px) / 2 + 14px));
   z-index: 24;
   min-height: 52px;
-  border-radius: 8px;
   background: var(--brown-dark);
   font-family: 'Fraunces', Georgia, serif;
   box-shadow: 0 14px 30px rgba(53, 23, 15, 0.25);
@@ -1608,9 +1607,6 @@ a {
   width: min(430px, 100%);
   min-height: auto;
   margin-inline: auto;
-  border-radius: 0;
-  padding: 12px max(14px, env(safe-area-inset-right)) calc(12px + env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
-  background: rgba(255, 250, 244, 0.96);
   box-shadow: 0 -10px 30px rgba(90, 31, 15, 0.13);
   backdrop-filter: blur(14px);
   color: transparent;

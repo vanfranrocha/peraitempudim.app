@@ -401,6 +401,20 @@ function getSizePromotionalPrice(selectedSize: Size) {
   return getPromotionalProduct('normal', 'tradicional', selectedSize)?.promotionalPrice
 }
 
+function getPriceParts(value?: number) {
+  const formatted = formatCurrency(value ?? 0).replace(/^R\$\s?/, '')
+  const [integerPart, centsPart = '00'] = formatted.split(',')
+  return { integer: integerPart, cents: `,${centsPart}` }
+}
+
+const promotionStartingPrice = computed(() => {
+  const values = Object.values(promotion.value.products)
+    .map((product) => Number(product.promotionalPrice))
+    .filter((value) => Number.isFinite(value) && value > 0)
+
+  return values.length ? Math.min(...values) : 0
+})
+
 function getSizePriceLabel(selectedSize: Size) {
   if (promoQueryEnabled.value && promotion.value.active && getSizePromotionalPrice(selectedSize)) return 'promoção pronta entrega'
   return `a partir de ${formatCurrency(prices.value.normal.tradicional[selectedSize])}`
@@ -1573,7 +1587,7 @@ onMounted(() => {
         >
           <div class="promo-panel__hero-title">
             <h1 id="promo-title">Pudins a partir de</h1>
-            <strong>R$ 7,99</strong>
+            <strong>{{ formatCurrency(promotionStartingPrice) }}</strong>
           </div>
 
           <div class="promo-panel__subhead">
@@ -1588,7 +1602,7 @@ onMounted(() => {
                 <span class="promo-offer-card__from">de {{ formatCurrency(promotion.products.normal_tradicional_180ml.originalPrice) }}</span>
                 <div class="promo-price promo-price--visual">
                   <small><span>por</span><br/><span>R$</span></small>
-                  <strong><span>7</span><sup>,99</sup></strong>
+                  <strong><span>{{ getPriceParts(promotion.products.normal_tradicional_180ml.promotionalPrice).integer }}</span><sup>{{ getPriceParts(promotion.products.normal_tradicional_180ml.promotionalPrice).cents }}</sup></strong>
                 </div>
               </div>
               <b>180ml</b>
@@ -1600,7 +1614,7 @@ onMounted(() => {
                 <span class="promo-offer-card__from">de {{ formatCurrency(promotion.products.normal_tradicional_500ml.originalPrice) }}</span>
                 <div class="promo-price promo-price--visual">
                   <small><span>por</span><br/><span>R$</span></small>
-                  <strong><span>19</span><sup>,99</sup></strong>
+                  <strong><span>{{ getPriceParts(promotion.products.normal_tradicional_500ml.promotionalPrice).integer }}</span><sup>{{ getPriceParts(promotion.products.normal_tradicional_500ml.promotionalPrice).cents }}</sup></strong>
                 </div>
               </div>
               <b>500ml</b>
@@ -1608,7 +1622,7 @@ onMounted(() => {
           </div>
 
           <p class="promo-delivery-rule promo-delivery-rule--box">
-            Pedido mínimo para delivery:<br />180ml: 4 unidades • 500ml: 2 unidades
+            Pedido mínimo para delivery:<br />180ml: {{ promotion.products.normal_tradicional_180ml.minimumDeliveryQuantity }} unidades • 500ml: {{ promotion.products.normal_tradicional_500ml.minimumDeliveryQuantity }} unidades
           </p>
           <p class="promo-note">Preços promocionais para versões participantes. Consulte valores da opção Zero Lactose.</p>
           <p class="promo-urgency">{{ promotion.urgency }}</p>
