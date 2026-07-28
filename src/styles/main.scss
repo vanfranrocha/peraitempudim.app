@@ -327,7 +327,8 @@ a {
 
 .hero__visual {
   position: relative;
-  min-height: 224px;
+  min-height: 220px;
+  max-height: 220px;
   border-radius: 18px;
   background: #fff7ed;
   box-shadow: none;
@@ -977,10 +978,11 @@ a {
   }
 
   .hero__visual {
-    min-height: 224px;
+    min-height: 220px;
 
     img {
-      min-height: 224px;
+      min-height: 220px;
+      max-height: 220px;
     }
   }
 
@@ -4503,4 +4505,13 @@ a {
   .scheduled-fields {
     grid-template-columns: 1fr;
   }
+}
+
+.delivery-status--manual {
+  border-color: rgba(122, 43, 22, 0.18);
+  background: #fff7ef;
+}
+
+.delivery-status--manual strong {
+  color: var(--brown-dark);
 }

@@ -5,7 +5,7 @@ export type DeliveryMode = 'retirada' | 'entrega'
 export type ProductOrderMode = 'ready' | 'scheduled'
 export type DeliveryRange = { maxDistance: number; price: number }
 export type DeliveryTimeSurcharge = { label: string; active: boolean; start: string; end: string; extraPrice: number }
-export type DeliveryPricingConfig = { ranges: DeliveryRange[]; timeSurcharges: DeliveryTimeSurcharge[] }
+export type DeliveryPricingConfig = { enabled: boolean; ranges: DeliveryRange[]; timeSurcharges: DeliveryTimeSurcharge[] }
 export type ProductKey = `${PuddingType}_${Flavor}_${Size}`
 
 export const prices: Record<PuddingType, Record<Flavor, Record<Size, number>>> = {
@@ -210,6 +210,7 @@ export const defaultAppConfig: AppConfig = {
   },
 
   deliveryPricing: {
+    enabled: true,
     ranges: [
       { maxDistance: 3, price: 6 },
       { maxDistance: 6, price: 8 },

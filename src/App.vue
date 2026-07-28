@@ -250,13 +250,14 @@ const freeShippingState = computed(() =>
 )
 const isEligibleForFreeShipping = computed(() => freeShippingState.value.isEligibleForFreeShipping)
 const amountRemainingForFreeShipping = computed(() => freeShippingState.value.amountRemainingForFreeShipping)
-const deliveryFee = computed(() =>
-  getDisplayedShippingPrice({
+const deliveryFee = computed(() => {
+  if (deliveryMode.value === 'entrega' && !isDeliveryCalculationEnabled.value) return null
+  return getDisplayedShippingPrice({
     deliveryMode: deliveryMode.value,
     calculatedDeliveryFee: calculatedDeliveryFee.value,
     isEligibleForFreeShipping: isEligibleForFreeShipping.value,
-  }),
-)
+  })
+})
 const total = computed(() => getOrderTotal(subtotal.value, deliveryFee.value))
 const effectiveDesiredDate = computed(() => (orderMode.value === 'ready' ? todayIso.value : desiredDate.value))
 function getDateError() {
@@ -283,6 +284,7 @@ const isDateValid = computed(() => getDateError() === '')
 const pickupLocation = computed(() => appConfig.value.pickupLocation)
 const prices = computed(() => appConfig.value.prices)
 const promotion = computed(() => appConfig.value.promotion)
+const isDeliveryCalculationEnabled = computed(() => appConfig.value.deliveryPricing.enabled !== false)
 
 const selectedPromotionalMinimum = computed(() => getPromotionalProduct(puddingType.value, flavor.value, size.value)?.minimumDeliveryQuantity ?? 1)
 const selectedProductAvailabilityError = computed(() => {
@@ -309,7 +311,7 @@ const deliveryAddressComplete = computed(() =>
     Boolean(state.value.trim())),
 )
 const canUseDeliveryCalculation = computed(() =>
-  deliveryMode.value !== 'entrega' || deliveryStatus.value === 'available' || deliveryStatus.value === 'outside-area',
+  deliveryMode.value !== 'entrega' || !isDeliveryCalculationEnabled.value || deliveryStatus.value === 'available' || deliveryStatus.value === 'outside-area',
 )
 const areCustomerDetailsValid = computed(() => isDateValid.value && !customerNameError.value && deliveryAddressComplete.value && canUseDeliveryCalculation.value)
 
@@ -319,7 +321,7 @@ const formatCurrency = (value: number) =>
 const formatDistance = (value: number) =>
   `${value.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} km`
 
-const deliveryDistanceLabel = computed(() => (deliveryDistanceKm.value === null ? '' : formatDistance(deliveryDistanceKm.value)))
+const deliveryDistanceLabel = computed(() => (!isDeliveryCalculationEnabled.value || deliveryDistanceKm.value === null ? '' : formatDistance(deliveryDistanceKm.value)))
 function getEstimatedDeliveryTime(distanceKm: number) {
   if (distanceKm <= 1) return '10 a 15 min'
   if (distanceKm <= 3) return '15 a 20 min'
@@ -331,6 +333,7 @@ function getEstimatedDeliveryTime(distanceKm: number) {
 const deliveryTimeLabel = computed(() => (deliveryDistanceKm.value === null ? '' : getEstimatedDeliveryTime(deliveryDistanceKm.value)))
 const deliveryFeeLabel = computed(() => {
   if (deliveryMode.value === 'retirada') return 'Retirada — grátis'
+  if (!isDeliveryCalculationEnabled.value) return 'A confirmar'
   if (isEligibleForFreeShipping.value) return 'Grátis'
   if (deliveryFee.value !== null) return formatCurrency(deliveryFee.value)
   if (deliveryStatus.value === 'outside-area') return 'Entrega a consultar'
@@ -343,7 +346,7 @@ const freeShippingSuggestionQuantity = computed(() => {
 })
 
 const freeShippingMessage = computed(() => {
-  if (deliveryMode.value !== 'entrega') return ''
+  if (deliveryMode.value !== 'entrega' || !isDeliveryCalculationEnabled.value) return ''
   if (!freeShippingState.value.hasMinimumSubtotal) {
     const plural = freeShippingSuggestionQuantity.value > 1 ? 'pudins' : 'pudim'
     return `🍮 Adicione + ${freeShippingSuggestionQuantity.value} ${plural} de 180 ml e ganhe frete grátis.`
@@ -361,6 +364,7 @@ const freeShippingMessage = computed(() => {
 })
 const canShowFreeShippingSuggestionButton = computed(() =>
   deliveryMode.value === 'entrega' &&
+  isDeliveryCalculationEnabled.value &&
   !freeShippingState.value.hasMinimumSubtotal &&
   (deliveryStatus.value === 'available' || deliveryStatus.value === 'outside-area'),
 )
@@ -686,7 +690,12 @@ async function fillAddressByCep() {
 }
 
 async function calculateDeliveryFee() {
-  if (deliveryMode.value !== 'entrega') {
+  if (deliveryMode.value === 'entrega' && !isDeliveryCalculationEnabled.value) {
+    resetDeliveryCalculation('idle')
+    return
+  }
+
+  if (deliveryMode.value !== 'entrega' || !isDeliveryCalculationEnabled.value) {
     resetDeliveryCalculation('idle')
     return
   }
@@ -727,10 +736,10 @@ async function calculateDeliveryFee() {
   }
 }
 
-watch([deliveryMode, cep, address, number, neighborhood, city, state], () => {
+watch([deliveryMode, cep, address, number, neighborhood, city, state, isDeliveryCalculationEnabled], () => {
   window.clearTimeout(deliveryDebounce)
 
-  if (deliveryMode.value !== 'entrega') {
+  if (deliveryMode.value !== 'entrega' || !isDeliveryCalculationEnabled.value) {
     resetDeliveryCalculation('idle')
     return
   }
@@ -1360,17 +1369,27 @@ onMounted(() => {
           <section class="admin-card-panel admin-section admin-delivery-panel">
             <div class="admin-card-panel__header">
               <div>
+                <h2>Cálculo de frete</h2>
+                <p>Escolha se o cliente verá o frete calculado no checkout ou se a taxa ficará a confirmar pelo WhatsApp.</p>
+              </div>
+              <label class="admin-switch admin-switch--compact"><input v-model="appConfig.deliveryPricing.enabled" type="checkbox" /><span><strong>{{ appConfig.deliveryPricing.enabled ? 'Cálculo ativo' : 'A confirmar' }}</strong></span></label>
+            </div>
+          </section>
+
+          <section class="admin-card-panel admin-section admin-delivery-panel">
+            <div class="admin-card-panel__header">
+              <div>
                 <h2>Taxa por raio</h2>
                 <p>Defina o valor automático conforme a distância calculada. Acima do maior raio, fica como entrega a consultar.</p>
               </div>
-              <button class="admin-ghost-button" type="button" @click="addDeliveryRange">Adicionar faixa</button>
+              <button class="admin-ghost-button" type="button" :disabled="!appConfig.deliveryPricing.enabled" @click="addDeliveryRange">Adicionar faixa</button>
             </div>
 
             <div class="admin-delivery-ranges">
               <article v-for="(range, index) in appConfig.deliveryPricing.ranges" :key="`range-${index}`" class="admin-delivery-row">
-                <label class="admin-money-field"><span>Até km</span><div><b>km</b><input v-model.number="range.maxDistance" type="number" min="0" step="0.1" /></div></label>
-                <label class="admin-money-field"><span>Valor</span><div><b>R$</b><input v-model.number="range.price" type="number" min="0" step="0.01" /></div></label>
-                <button class="admin-order-delete" type="button" :disabled="appConfig.deliveryPricing.ranges.length <= 1" @click="removeDeliveryRange(index)">Remover</button>
+                <label class="admin-money-field"><span>Até km</span><div><b>km</b><input v-model.number="range.maxDistance" type="number" min="0" step="0.1" :disabled="!appConfig.deliveryPricing.enabled" /></div></label>
+                <label class="admin-money-field"><span>Valor</span><div><b>R$</b><input v-model.number="range.price" type="number" min="0" step="0.01" :disabled="!appConfig.deliveryPricing.enabled" /></div></label>
+                <button class="admin-order-delete" type="button" :disabled="!appConfig.deliveryPricing.enabled || appConfig.deliveryPricing.ranges.length <= 1" @click="removeDeliveryRange(index)">Remover</button>
               </article>
             </div>
           </section>
@@ -1381,17 +1400,17 @@ onMounted(() => {
                 <h2>Adicional por horário</h2>
                 <p>Use para horários de maior demanda. O adicional é somado à faixa de distância quando ativo.</p>
               </div>
-              <button class="admin-ghost-button" type="button" @click="addDeliveryTimeSurcharge">Adicionar horário</button>
+              <button class="admin-ghost-button" type="button" :disabled="!appConfig.deliveryPricing.enabled" @click="addDeliveryTimeSurcharge">Adicionar horário</button>
             </div>
 
             <div class="admin-delivery-ranges">
               <article v-for="(surcharge, index) in appConfig.deliveryPricing.timeSurcharges" :key="`surcharge-${index}`" class="admin-delivery-row admin-delivery-row--time">
-                <label class="admin-switch admin-switch--compact"><input v-model="surcharge.active" type="checkbox" /><span><strong>{{ surcharge.active ? 'Ativo' : 'Inativo' }}</strong></span></label>
-                <label class="field"><span>Nome</span><input v-model="surcharge.label" type="text" /></label>
-                <label class="field"><span>Início</span><input v-model="surcharge.start" type="time" /></label>
-                <label class="field"><span>Fim</span><input v-model="surcharge.end" type="time" /></label>
-                <label class="admin-money-field"><span>Adicional</span><div><b>R$</b><input v-model.number="surcharge.extraPrice" type="number" min="0" step="0.01" /></div></label>
-                <button class="admin-order-delete" type="button" @click="removeDeliveryTimeSurcharge(index)">Remover</button>
+                <label class="admin-switch admin-switch--compact"><input v-model="surcharge.active" type="checkbox" :disabled="!appConfig.deliveryPricing.enabled" /><span><strong>{{ surcharge.active ? 'Ativo' : 'Inativo' }}</strong></span></label>
+                <label class="field"><span>Nome</span><input v-model="surcharge.label" type="text" :disabled="!appConfig.deliveryPricing.enabled" /></label>
+                <label class="field"><span>Início</span><input v-model="surcharge.start" type="time" :disabled="!appConfig.deliveryPricing.enabled" /></label>
+                <label class="field"><span>Fim</span><input v-model="surcharge.end" type="time" :disabled="!appConfig.deliveryPricing.enabled" /></label>
+                <label class="admin-money-field"><span>Adicional</span><div><b>R$</b><input v-model.number="surcharge.extraPrice" type="number" min="0" step="0.01" :disabled="!appConfig.deliveryPricing.enabled" /></div></label>
+                <button class="admin-order-delete" type="button" :disabled="!appConfig.deliveryPricing.enabled" @click="removeDeliveryTimeSurcharge(index)">Remover</button>
               </article>
             </div>
           </section>
@@ -1801,7 +1820,7 @@ onMounted(() => {
                 </label>
               </div>
                             <div
-                v-if="deliveryMessage || deliveryFee !== null"
+                v-if="isDeliveryCalculationEnabled && (deliveryMessage || deliveryFee !== null)"
                 class="delivery-status"
                 :class="`delivery-status--${deliveryStatus}`"
               >
@@ -1822,6 +1841,10 @@ onMounted(() => {
                   Adicionar {{ freeShippingSuggestionQuantity }} ao pedido
                 </button>
                 <small v-if="deliveryStatus !== 'available' && deliveryMessage">{{ deliveryMessage }}</small>
+              </div>
+              <div v-if="!isDeliveryCalculationEnabled" class="delivery-status delivery-status--manual">
+                <strong>Taxa de entrega: A confirmar</strong>
+                <span>Vamos confirmar o valor da entrega pelo WhatsApp antes de finalizar.</span>
               </div>
               <label class="field field--wide">
                 <span>Complemento (opcional)</span>
