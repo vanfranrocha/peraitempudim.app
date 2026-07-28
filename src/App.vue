@@ -1685,7 +1685,6 @@ onMounted(() => {
             <div class="section-heading">
               <div>
                 <h2>Escolha o tamanho</h2>
-                <small>obrigatório 1</small>
               </div>
             </div>
             <div class="option-grid option-grid--three">
@@ -1707,7 +1706,6 @@ onMounted(() => {
             <div class="section-heading">
               <div>
                 <h2>Escolha o sabor</h2>
-                <small>obrigatório 1</small>
               </div>
             </div>
             <div class="option-grid option-grid--two">
@@ -1727,7 +1725,6 @@ onMounted(() => {
             <div class="section-heading">
               <div>
                 <h2>Escolha o tipo</h2>
-                <small>obrigatório 1</small>
               </div>
             </div>
             <SegmentedControl :model-value="puddingType" :options="typeOptions" @update:model-value="selectType" />

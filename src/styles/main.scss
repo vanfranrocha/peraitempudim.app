@@ -284,8 +284,7 @@ a {
   display: grid;
   gap: 14px;
   align-items: center;
-  padding: 12px 9px 28px;
-  background: var(--white);
+  padding: 0px 9px;
 }
 
 .hero--compact {
@@ -407,7 +406,7 @@ a {
     margin: 0;
     color: var(--brown-dark);
     font-family: 'Fraunces', Georgia, serif;
-    font-size: 1.28rem;
+    font-size: 1.2rem;
     line-height: 1.05;
   }
 
@@ -973,9 +972,6 @@ a {
 }
 
 @media (min-width: 860px) {
-  .hero {
-    padding: 12px 9px 28px;
-  }
 
   .hero__visual {
     min-height: 220px;
@@ -988,7 +984,7 @@ a {
 
   .order-layout {
     grid-template-columns: 1fr;
-    gap: 18px;
+    gap: 12px;
   }
 
   .option-grid--three {
