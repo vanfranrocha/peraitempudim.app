@@ -51,7 +51,7 @@ export const promotion = {
       type: 'normal' as const,
       originalPrice: 12,
       promotionalPrice: 9.99,
-      minimumDeliveryQuantity: 4,
+      minimumDeliveryQuantity: 2,
     },
     normal_tradicional_500ml: {
       flavor: 'tradicional' as const,
@@ -59,7 +59,7 @@ export const promotion = {
       type: 'normal' as const,
       originalPrice: 30,
       promotionalPrice: 24.99,
-      minimumDeliveryQuantity: 2,
+      minimumDeliveryQuantity: 1,
     },
     normal_cafe_180ml: {
       flavor: 'cafe' as const,
