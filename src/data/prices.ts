@@ -50,7 +50,7 @@ export const promotion = {
       size: '180ml' as const,
       type: 'normal' as const,
       originalPrice: 12,
-      promotionalPrice: 7.99,
+      promotionalPrice: 9.99,
       minimumDeliveryQuantity: 4,
     },
     normal_tradicional_500ml: {
@@ -58,7 +58,7 @@ export const promotion = {
       size: '500ml' as const,
       type: 'normal' as const,
       originalPrice: 30,
-      promotionalPrice: 19.99,
+      promotionalPrice: 24.99,
       minimumDeliveryQuantity: 2,
     },
     normal_cafe_180ml: {
