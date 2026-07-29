@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import OptionCard from './components/OptionCard.vue'
 import OrderSummary from './components/OrderSummary.vue'
+import OrderStatusTimeline from './components/OrderStatusTimeline.vue'
 import QuantityStepper from './components/QuantityStepper.vue'
 import SegmentedControl from './components/SegmentedControl.vue'
 import pudding1kgImage from './images/1kg.png'
@@ -36,12 +37,16 @@ import {
   getFreeShippingState,
   getOrderTotal,
 } from './services/deliveryRules'
+import type { Session } from '@supabase/supabase-js'
+import { supabase } from './lib/supabase'
+import { adminOrderStatusLabels, deleteOrder, fetchAdminOrders, updateOrderStatus, type AdminOrder, type AdminOrderStatus } from './services/adminOrders'
+import { createOrder, type CreateOrderResult } from './services/orders'
+import { getOrCreateCheckoutSessionId, resetCheckoutSession, trackCartStarted, trackCheckoutViewed, trackDetailsStarted } from './services/checkoutTracking'
+import { fetchCheckoutFunnelSummary, fetchRecentAbandonedCheckoutSessions, type AbandonedCheckoutSession, type CheckoutFunnelSummary, type FunnelRange } from './services/checkoutAnalytics'
+import { applyProductsToConfig, fetchProducts, saveProductsToSupabase } from './services/products'
 
-const whatsappNumber = '5562981628313'
-const adminCredentials = { user: 'admin', password: 'Pudim@2026!Faicalville' }
 const appConfigStorageKey = 'perai-tem-pudim-config'
 const ordersStorageKey = 'perai-tem-pudim-orders'
-const adminSessionStorageKey = 'perai-tem-pudim-admin-session'
 
 type OrderMode = 'ready' | 'scheduled'
 type DeliveryCalculationStatus =
@@ -56,7 +61,6 @@ type DeliveryCalculationStatus =
 function cloneConfig() {
   return JSON.parse(JSON.stringify(defaultAppConfig)) as typeof defaultAppConfig
 }
-
 
 function mergeConfig(base: typeof defaultAppConfig, stored: Partial<typeof defaultAppConfig>) {
   return {
@@ -91,6 +95,8 @@ function loadStoredConfig() {
 
 type CartItem = {
   id: number
+  productId: string
+  productKey: ProductKey
   flavor: Flavor
   puddingType: PuddingType
   size: Size
@@ -170,11 +176,26 @@ const adminSettingsTab = ref<'availability' | 'hours' | 'products'>('availabilit
 const adminSearch = ref('')
 const adminProductSizeFilter = ref<Size | 'all'>('all')
 const adminProductFlavorFilter = ref<Flavor | 'all'>('all')
-const adminUser = ref('')
+const adminEmail = ref('')
 const adminPassword = ref('')
 const showAdminPassword = ref(false)
 const adminError = ref('')
+const adminAuthLoading = ref(false)
+const adminAuthError = ref('')
+const adminSession = ref<Session | null>(null)
+const isAdmin = ref(false)
 const savedOrders = ref<SavedOrder[]>([])
+const adminOrders = ref<AdminOrder[]>([])
+const adminOrdersLoading = ref(false)
+const adminOrdersError = ref('')
+const checkoutFunnelRange = ref<FunnelRange>('today')
+const checkoutFunnelSummary = ref<CheckoutFunnelSummary | null>(null)
+const abandonedCheckoutSessions = ref<AbandonedCheckoutSession[]>([])
+const checkoutFunnelLoading = ref(false)
+const checkoutFunnelError = ref('')
+const productsLoading = ref(false)
+const productsLoadError = ref('')
+const adminSaving = ref(false)
 
 const flavor = ref<Flavor>('tradicional')
 const puddingType = ref<PuddingType>('normal')
@@ -182,6 +203,7 @@ const size = ref<Size>('500ml')
 const quantity = ref(1)
 const orderMode = ref<OrderMode | null>(null)
 const customerName = ref('')
+const customerPhone = ref('')
 const desiredDate = ref('')
 const desiredTimeSlot = ref('')
 const deliveryMode = ref<DeliveryMode>('retirada')
@@ -199,10 +221,14 @@ const deliveryMessage = ref('')
 const deliveryDistanceKm = ref<number | null>(null)
 const calculatedDeliveryFee = ref<number | null>(null)
 const triedSubmit = ref(false)
+const submitLoading = ref(false)
+const submitError = ref('')
+const currentCreatedOrder = ref<CreateOrderResult | null>(null)
+const createdOrderItems = ref<CartItem[]>([])
 const isLoading = ref(true)
 const loadingPhraseIndex = ref(0)
 const cartItems = ref<CartItem[]>([])
-const currentPage = ref<'start' | 'order' | 'details' | 'checkout'>('start')
+const currentPage = ref<'start' | 'order' | 'details' | 'checkout' | 'success'>('start')
 const flavorSection = ref<HTMLElement | null>(null)
 const typeSection = ref<HTMLElement | null>(null)
 const sizeSection = ref<HTMLElement | null>(null)
@@ -210,7 +236,10 @@ const cartSection = ref<HTMLElement | null>(null)
 const summarySection = ref<HTMLElement | null>(null)
 const promotionSection = ref<HTMLElement | null>(null)
 const promoQueryEnabled = ref(false)
+const productIdByKey = ref<Partial<Record<ProductKey, string>>>({})
 const shouldHighlightPromotion = ref(false)
+
+let authSubscription: { unsubscribe: () => void } | null = null
 
 const loadingPhrases = ['produção artesanal', 'Sob encomenda e pronta entrega', 'feito com calma e carinho']
 
@@ -280,6 +309,13 @@ const customerNameError = computed(() => {
   if (customerName.value.trim().length < 2) return 'Informe um nome válido.'
   return ''
 })
+const normalizedCustomerPhone = computed(() => customerPhone.value.replace(/\D/g, ''))
+const customerPhoneError = computed(() => {
+  if (!triedSubmit.value) return ''
+  if (!normalizedCustomerPhone.value) return 'Informe um telefone para confirmarmos o pedido.'
+  if (normalizedCustomerPhone.value.length < 10 || normalizedCustomerPhone.value.length > 11) return 'Informe um telefone válido com DDD.'
+  return ''
+})
 const isDateValid = computed(() => getDateError() === '')
 const pickupLocation = computed(() => appConfig.value.pickupLocation)
 const prices = computed(() => appConfig.value.prices)
@@ -313,10 +349,36 @@ const deliveryAddressComplete = computed(() =>
 const canUseDeliveryCalculation = computed(() =>
   deliveryMode.value !== 'entrega' || !isDeliveryCalculationEnabled.value || deliveryStatus.value === 'available' || deliveryStatus.value === 'outside-area',
 )
-const areCustomerDetailsValid = computed(() => isDateValid.value && !customerNameError.value && deliveryAddressComplete.value && canUseDeliveryCalculation.value)
+const areCustomerDetailsValid = computed(() => isDateValid.value && !customerNameError.value && !customerPhoneError.value && deliveryAddressComplete.value && canUseDeliveryCalculation.value)
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)
+
+const formatOrderNumber = (orderNumber: number | string) => {
+  const numeric = Number(orderNumber)
+  if (!Number.isFinite(numeric)) return `PUD-${String(orderNumber)}`
+  return `PUD-${String(numeric).padStart(6, '0')}`
+}
+
+const formatBrazilianPhone = (phone: string) => {
+  const digits = phone.replace(/\D/g, '')
+  if (digits.length === 11) return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`
+  if (digits.length === 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`
+  return digits || phone
+}
+
+const maskBrazilianPhone = (value: string) => {
+  const digits = value.replace(/\D/g, '').slice(0, 11)
+  if (digits.length <= 2) return digits ? `(${digits}` : ''
+  if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`
+  if (digits.length <= 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`
+}
+
+function formatCustomerPhoneInput(event: Event) {
+  const input = event.target as HTMLInputElement
+  customerPhone.value = maskBrazilianPhone(input.value)
+}
 
 const formatDistance = (value: number) =>
   `${value.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} km`
@@ -576,6 +638,10 @@ function getProductKey(productType: PuddingType, productFlavor: Flavor, productS
   return `${productType}_${productFlavor}_${productSize}` as ProductKey
 }
 
+function getProductId(productType: PuddingType, productFlavor: Flavor, productSize: Size) {
+  return productIdByKey.value[getProductKey(productType, productFlavor, productSize)] ?? ''
+}
+
 function getProductImage(productSize: Size) {
   if (productSize === '180ml') return pudding180Image
   if (productSize === '500ml') return pudding500Image
@@ -634,17 +700,23 @@ const adminTitle = computed(() => {
 })
 const adminSubtitle = computed(() => {
   if (adminPage.value === 'dashboard') return 'Resumo rápido da loja, produtos e campanha.'
-  if (adminPage.value === 'orders') return 'Pedidos enviados para o WhatsApp.'
+  if (adminPage.value === 'orders') return 'Pedidos recebidos pelo app.'
   if (adminPage.value === 'delivery') return 'Controle taxa por raio e adicionais por horário.'
   return 'Ajuste disponibilidade, horários e produtos.'
 })
-const adminOrdersTotal = computed(() => savedOrders.value.length)
+const adminOrdersTotal = computed(() => adminOrders.value.length)
 const adminOrdersToday = computed(() => {
   const today = new Date().toLocaleDateString('pt-BR')
-  return savedOrders.value.filter((order) => new Date(order.createdAt).toLocaleDateString('pt-BR') === today).length
+  return adminOrders.value.filter((order) => new Date(order.createdAt).toLocaleDateString('pt-BR') === today).length
 })
+const adminPendingOrders = computed(() => adminOrders.value.filter((order) => order.status === 'pending').length)
+const adminCompletedRevenue = computed(() =>
+  adminOrders.value
+    .filter((order) => order.status === 'completed')
+    .reduce((sum, order) => sum + order.total, 0),
+)
 const adminOrdersByDay = computed(() => {
-  const groups = savedOrders.value.reduce<Record<string, number>>((acc, order) => {
+  const groups = adminOrders.value.reduce<Record<string, number>>((acc, order) => {
     const day = new Date(order.createdAt).toLocaleDateString('pt-BR')
     acc[day] = (acc[day] ?? 0) + 1
     return acc
@@ -653,15 +725,121 @@ const adminOrdersByDay = computed(() => {
   return Object.entries(groups).map(([day, count]) => ({ day, count }))
 })
 
-function getOrderItemImage(item: SavedOrder['items'][number]) {
-  if (item.image) return item.image
-  if (item.details.includes('180')) return pudding180Image
-  if (item.details.includes('500')) return pudding500Image
+const adminKanbanStatuses = computed(() => [
+  { status: 'pending' as AdminOrderStatus, title: 'A aceitar' },
+  { status: 'confirmed' as AdminOrderStatus, title: 'Confirmado' },
+  { status: 'preparing' as AdminOrderStatus, title: 'Em produção' },
+  { status: 'ready' as AdminOrderStatus, title: 'Pronto' },
+  { status: 'out_for_delivery' as AdminOrderStatus, title: 'Saiu para entrega' },
+  { status: 'completed' as AdminOrderStatus, title: 'Finalizado' },
+  { status: 'cancelled' as AdminOrderStatus, title: 'Cancelado' },
+])
+
+const adminKanbanOrders = computed(() =>
+  adminKanbanStatuses.value.map((column) => ({
+    ...column,
+    orders: adminOrders.value.filter((order) => order.status === column.status),
+  })),
+)
+
+const adminStatusFlow: AdminOrderStatus[] = ['pending', 'confirmed', 'preparing', 'ready', 'out_for_delivery', 'completed']
+
+function getOrderItemImage(item: SavedOrder['items'][number] | AdminOrder['items'][number]) {
+  if ('image' in item && item.image) return item.image
+  if ('details' in item) {
+    if (item.details.includes('180')) return pudding180Image
+    if (item.details.includes('500')) return pudding500Image
+    return pudding1kgImage
+  }
+  if (item.productSizeMl === 180) return pudding180Image
+  if (item.productSizeMl === 500) return pudding500Image
   return pudding1kgImage
 }
 
+function getAdminOrderItemDetails(item: AdminOrder['items'][number]) {
+  const variant = item.productVariant === 'zero_lactose' ? 'Zero lactose' : 'Normal'
+  const size = item.productSizeMl ? `${item.productSizeMl} ml` : item.productWeightGrams ? `${item.productWeightGrams / 1000} kg` : ''
+  return [variant, size].filter(Boolean).join(' • ')
+}
+
+function getAdminOrderWhatsappUrl(order: AdminOrder) {
+  const phone = order.customerPhone.replace(/\D/g, '')
+  if (!phone) return ''
+  const normalized = phone.startsWith('55') ? phone : `55${phone}`
+  const message = `Oi, ${order.customerName}! Recebemos seu pedido ${formatOrderNumber(order.orderNumber)} do Peraí, tem pudim! 🍮`
+  return `https://wa.me/${normalized}?text=${encodeURIComponent(message)}`
+}
+
+function getAdminOrderDateLabel(order: AdminOrder) {
+  const date = order.requestedDate ? formatDate(order.requestedDate) : 'Sem data'
+  return order.requestedTime ? `${date} • ${order.requestedTime}` : date
+}
+
+function getAdminOrderShortAddress(order: AdminOrder) {
+  if (order.fulfillmentType === 'pickup') return 'Retirada'
+  const address = order.deliveryAddress
+  if (!address) return 'Entrega sem endereço'
+  return `${address.street}, ${address.number} • ${address.neighborhood}`
+}
+
+function getAdminOrderNextStatus(order: AdminOrder) {
+  if (order.status === 'pending') return 'confirmed' as AdminOrderStatus
+  const index = adminStatusFlow.indexOf(order.status)
+  return index >= 0 ? adminStatusFlow[index + 1] : undefined
+}
+
+function getAdminOrderPreviousStatus(order: AdminOrder) {
+  if (order.status === 'cancelled') return 'pending' as AdminOrderStatus
+  const index = adminStatusFlow.indexOf(order.status)
+  return index > 0 ? adminStatusFlow[index - 1] : undefined
+}
+
+function getAdminOrderNextLabel(order: AdminOrder) {
+  if (order.status === 'pending') return 'Aceitar'
+  const status = getAdminOrderNextStatus(order)
+  return status ? `Avançar para ${adminOrderStatusLabels[status]}` : ''
+}
+
+function isAdminOrderItemPromotion(item: AdminOrder['items'][number]) {
+  const variant = item.productVariant === 'zero_lactose' ? 'zero' : item.productVariant === 'normal' ? 'normal' : null
+  const flavor = item.productFlavor === 'tradicional' || item.productFlavor === 'cafe' ? item.productFlavor : null
+  const size = item.productSizeMl === 180 ? '180ml' : item.productSizeMl === 500 ? '500ml' : item.productWeightGrams === 1000 ? '1kg' : null
+  if (!variant || !flavor || !size) return false
+  const regularPrice = appConfig.value.prices[variant][flavor][size]
+  return Number.isFinite(regularPrice) && item.unitPrice < regularPrice
+}
+
+function hasAdminOrderPromotion(order: AdminOrder) {
+  return order.items.some(isAdminOrderItemPromotion)
+}
+
+function getCheckoutStepLabel(step: string) {
+  if (step === 'cart') return 'Carrinho'
+  if (step === 'details') return 'Dados'
+  if (step === 'checkout') return 'Resumo final'
+  if (step === 'success') return 'Concluído'
+  return step
+}
+
+function getAdminDeliveryDetails(order: AdminOrder) {
+  if (order.fulfillmentType === 'pickup') return 'Retirada no local combinado.'
+  const address = order.deliveryAddress
+  if (!address) return 'Endereço não informado.'
+  return [
+    address.postalCode && `CEP: ${address.postalCode}`,
+    `Endereço: ${address.street}`,
+    `Número: ${address.number}`,
+    `Bairro: ${address.neighborhood}`,
+    `Cidade/UF: ${address.city} - ${address.state}`,
+    address.complement && `Complemento: ${address.complement}`,
+    address.reference && `Referência: ${address.reference}`,
+  ].filter(Boolean).join('\n')
+}
+
 let deliveryDebounce: number | undefined
+let checkoutTrackingDebounce: number | undefined
 let latestDeliveryRequestId = 0
+let adminOrdersChannel: ReturnType<typeof supabase.channel> | null = null
 
 function resetDeliveryCalculation(status: DeliveryCalculationStatus = 'idle', message = '') {
   deliveryStatus.value = status
@@ -739,7 +917,7 @@ async function calculateDeliveryFee() {
 
     if (fee === null) {
       deliveryStatus.value = 'outside-area'
-      deliveryMessage.value = 'Esse endereço está um pouco mais distante. Fale com a gente pelo WhatsApp para verificarmos a entrega.'
+      deliveryMessage.value = 'Esse endereço está um pouco mais distante. Envie o pedido para verificarmos a entrega.'
       return
     }
 
@@ -775,6 +953,14 @@ watch([desiredDate, scheduledTimeOptions], () => {
   }
 })
 
+watch(cartItems, () => {
+  scheduleCartTracking()
+}, { deep: true })
+
+watch(checkoutFunnelRange, () => {
+  if (adminMode.value && adminLoggedIn.value) void loadCheckoutFunnel()
+})
+
 const deliveryDetails = computed(() => {
   if (deliveryMode.value === 'retirada') return `Local de retirada: ${pickupLocation.value}`
 
@@ -791,47 +977,55 @@ const deliveryDetails = computed(() => {
   return details.length ? details.join('\n') : 'Endereço a combinar.'
 })
 
-const whatsappUrl = computed(() => {
-  const observation = notes.value.trim() || 'Sem observações.'
-  const orderNumber = String(Date.now()).slice(-8)
-  const separator = '------------------------------'
-  const itemsSummary = cartItems.value
-    .map((item, index) =>
-      [
-        `*${index + 1}. Pudim ${flavorLabels[item.flavor]}*`,
-        `Tipo: ${typeLabels[item.puddingType]}`,
-        `Tamanho: ${sizeLabels[item.size]}`,
-        `Quantidade: ${item.quantity}`,
-        item.promotionLabel ? `Promoção: ${item.promotionLabel}` : '',
-        item.originalUnitPrice ? `Valor original: ${formatCurrency(item.originalUnitPrice)}` : '',
-        `Valor unitário: ${formatCurrency(item.unitPrice)}`,
-        `Subtotal: ${formatCurrency(item.total)}`,
-      ].filter(Boolean).join('\n'),
-    )
-    .join(`\n${separator}\n`)
-
-  const deliveryBlock =
-    deliveryMode.value === 'entrega'
-      ? [
-          '*Forma de entrega:* Entrega',
-          deliveryDetails.value,
-          deliveryDistanceLabel.value && `*Distância aproximada:* ${deliveryDistanceLabel.value}`,
-          `*Taxa de entrega:* ${deliveryFeeLabel.value}`,
-        ].filter(Boolean).join('\n')
-      : `*Forma de entrega:* Retirada — grátis\n${deliveryDetails.value}`
-
-  const message = `Oi! Quero fazer este pedido \n\n*Meu pedido #${orderNumber}*\n\n${itemsSummary}\n${separator}\n\n*Nome:* ${customerName.value.trim()}\n\n${separator}\n*Tipo de pedido:* ${orderModeLabel.value}\n*Data desejada:* ${formatDate(effectiveDesiredDate.value)}${orderMode.value === 'scheduled' ? `\n*Período de entrega:* ${formatDeliveryPeriod(desiredTimeSlot.value)}` : ''}\n\n${separator}\n${deliveryBlock}\n\n${separator}\n*Observações:* ${observation}\n\n${separator}\n*Subtotal:* ${formatCurrency(subtotal.value)}\n*Entrega:* ${deliveryFeeLabel.value}\n*Valor Total:* ${formatCurrency(total.value)}\n\nAguardo a confirmação da disponibilidade do pedido.\n\nObrigado!`
-
-  return `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(message)}`
-})
-
-function handleSubmit() {
+async function handleSubmit() {
   triedSubmit.value = true
-  if (!areCustomerDetailsValid.value) {
-    return
+  submitError.value = ''
+  if (!areCustomerDetailsValid.value || submitLoading.value) return
+
+  const clientRequestId = crypto.randomUUID()
+  submitLoading.value = true
+
+  try {
+    const result = await createOrder({
+      client_request_id: clientRequestId,
+      checkout_session_id: getOrCreateCheckoutSessionId(),
+      customer_name: customerName.value.trim(),
+      customer_phone: normalizedCustomerPhone.value,
+      order_type: orderMode.value === 'scheduled' ? 'scheduled' : 'ready_delivery',
+      fulfillment_type: deliveryMode.value === 'entrega' ? 'delivery' : 'pickup',
+      requested_date: effectiveDesiredDate.value,
+      requested_time: orderMode.value === 'scheduled' ? desiredTimeSlot.value : null,
+      customer_notes: notes.value.trim(),
+      delivery: deliveryMode.value === 'entrega' ? {
+        postal_code: formatCep(cep.value),
+        street: address.value.trim(),
+        number: number.value.trim(),
+        complement: complement.value.trim(),
+        neighborhood: neighborhood.value.trim(),
+        city: city.value.trim(),
+        state: state.value.trim(),
+        reference: reference.value.trim(),
+        latitude: null,
+        longitude: null,
+        distance_km: deliveryDistanceKm.value,
+      } : null,
+      items: cartItems.value.map((item) => ({
+        product_id: item.productId,
+        quantity: item.quantity,
+        promotion_applied: Boolean(item.promotionLabel),
+      })),
+    })
+
+    createdOrderItems.value = cartItems.value.map((item) => ({ ...item }))
+    currentCreatedOrder.value = result
+    cartItems.value = []
+    currentPage.value = 'success'
+    void nextTick(() => window.scrollTo({ top: 0, behavior: 'smooth' }))
+  } catch (error) {
+    submitError.value = error instanceof Error ? error.message : 'Não foi possível enviar o pedido agora.'
+  } finally {
+    submitLoading.value = false
   }
-  saveCurrentOrder()
-  window.open(whatsappUrl.value, '_blank', 'noopener,noreferrer')
 }
 
 function scrollToElement(target: HTMLElement | null) {
@@ -841,10 +1035,46 @@ function scrollToElement(target: HTMLElement | null) {
 }
 
 function openStartPage() {
+  currentCreatedOrder.value = null
+  createdOrderItems.value = []
   currentPage.value = 'start'
   window.setTimeout(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }, 40)
+}
+
+function goHomeFromSuccess() {
+  currentPage.value = 'start'
+  window.setTimeout(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }, 40)
+}
+
+function startAnotherOrder() {
+  cartItems.value = []
+  customerName.value = ''
+  customerPhone.value = ''
+  desiredDate.value = ''
+  desiredTimeSlot.value = ''
+  deliveryMode.value = 'retirada'
+  cep.value = ''
+  neighborhood.value = ''
+  address.value = ''
+  number.value = ''
+  city.value = 'Goiânia'
+  state.value = 'GO'
+  complement.value = ''
+  reference.value = ''
+  notes.value = ''
+  triedSubmit.value = false
+  submitError.value = ''
+  orderMode.value = null
+  currentCreatedOrder.value = null
+  createdOrderItems.value = []
+  resetCheckoutSession()
+  resetDeliveryCalculation('idle')
+  currentPage.value = 'start'
+  window.setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 40)
 }
 
 function openOrderPage(target?: HTMLElement | null) {
@@ -861,6 +1091,7 @@ function openOrderPage(target?: HTMLElement | null) {
 
 function openDetailsPage() {
   if (!itemAdded.value) return
+  void trackDetailsStarted(buildCheckoutTrackingPayload(false))
   currentPage.value = 'details'
   window.setTimeout(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -869,6 +1100,7 @@ function openDetailsPage() {
 
 function openCheckoutPage() {
   if (!itemAdded.value) return
+  void trackCheckoutViewed(buildCheckoutTrackingPayload(true))
   currentPage.value = 'checkout'
   window.setTimeout(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -920,8 +1152,17 @@ function addToCart() {
   triedSubmit.value = true
   if (selectedProductAvailabilityError.value || selectedPromotionalMinimumError.value) return
 
+  const nextProductKey = getProductKey(puddingType.value, flavor.value, size.value)
+  const nextProductId = productIdByKey.value[nextProductKey]
+  if (!nextProductId) {
+    selectedProductAvailabilityError.value || (submitError.value = 'Não foi possível identificar esse produto. Atualize a página e tente novamente.')
+    return
+  }
+
   cartItems.value.push({
     id: Date.now(),
+    productId: nextProductId,
+    productKey: nextProductKey,
     flavor: flavor.value,
     puddingType: puddingType.value,
     size: size.value,
@@ -948,8 +1189,14 @@ function addFreeShippingSuggestionToCart() {
   const suggestedUnitPrice = getEffectivePrice(suggestedType, suggestedFlavor, suggestedSize)
   const suggestedPromotion = getPromotionalProduct(suggestedType, suggestedFlavor, suggestedSize)
 
+  const suggestedProductKey = getProductKey(suggestedType, suggestedFlavor, suggestedSize)
+  const suggestedProductId = productIdByKey.value[suggestedProductKey]
+  if (!suggestedProductId) return
+
   cartItems.value.push({
     id: Date.now(),
+    productId: suggestedProductId,
+    productKey: suggestedProductKey,
     flavor: suggestedFlavor,
     puddingType: suggestedType,
     size: suggestedSize,
@@ -972,10 +1219,35 @@ function removeCartItem(itemId: number) {
 function confirmDetails() {
   triedSubmit.value = true
   if (!areCustomerDetailsValid.value) return
+  void trackDetailsStarted(buildCheckoutTrackingPayload(true))
   openCheckoutPage()
 }
 
 
+
+function buildCheckoutTrackingPayload(includeCustomer = false) {
+  return {
+    items_quantity: cartQuantity.value,
+    cart_subtotal: subtotal.value,
+    order_mode: orderMode.value,
+    fulfillment_type: deliveryMode.value === 'entrega' ? 'delivery' : deliveryMode.value === 'retirada' ? 'pickup' : null,
+    customer_name: includeCustomer ? customerName.value.trim() || null : null,
+    customer_phone: includeCustomer ? normalizedCustomerPhone.value || null : null,
+    cart_items: cartItems.value.map((item) => ({
+      product_id: item.productId,
+      product_key: item.productKey,
+      quantity: item.quantity,
+    })),
+  }
+}
+
+function scheduleCartTracking() {
+  window.clearTimeout(checkoutTrackingDebounce)
+  if (!cartItems.value.length) return
+  checkoutTrackingDebounce = window.setTimeout(() => {
+    void trackCartStarted(buildCheckoutTrackingPayload(false))
+  }, 450)
+}
 
 function loadSavedOrders(options: { persistInitialOrders?: boolean } = { persistInitialOrders: true }) {
   try {
@@ -995,38 +1267,6 @@ function loadSavedOrders(options: { persistInitialOrders?: boolean } = { persist
 
 function persistSavedOrders() {
   window.localStorage.setItem(ordersStorageKey, JSON.stringify(savedOrders.value))
-}
-
-function saveCurrentOrder() {
-  const orderId = String(Date.now()).slice(-8)
-  const order: SavedOrder = {
-    id: orderId,
-    createdAt: new Date().toISOString(),
-    customerName: customerName.value.trim(),
-    orderMode: orderModeLabel.value,
-    desiredDate: formatDate(effectiveDesiredDate.value),
-    desiredTimeSlot: orderMode.value === 'scheduled' ? desiredTimeSlot.value : '',
-    deliveryMode: deliveryMode.value,
-    deliveryDetails: deliveryDetails.value,
-    deliveryFee: deliveryMode.value === 'entrega' ? deliveryFee.value : 0,
-    deliveryFeeLabel: deliveryFeeLabel.value,
-    deliveryDistanceKm: deliveryDistanceKm.value,
-    subtotal: subtotal.value,
-    total: total.value,
-    notes: notes.value.trim(),
-    items: cartItems.value.map((item) => ({
-      name: `Pudim ${flavorLabels[item.flavor]}`,
-      details: `${typeLabels[item.puddingType]} • ${sizeLabels[item.size]}`,
-      quantity: item.quantity,
-      unitPrice: item.unitPrice,
-      total: item.total,
-      promotionLabel: item.promotionLabel,
-      image: item.image,
-    })),
-  }
-
-  savedOrders.value = [order, ...savedOrders.value].slice(0, 100)
-  persistSavedOrders()
 }
 
 function clearSavedOrders() {
@@ -1058,6 +1298,107 @@ function addDeliveryTimeSurcharge() {
   })
 }
 
+async function loadProductsFromSupabase() {
+  productsLoading.value = true
+  productsLoadError.value = ''
+
+  try {
+    const products = await fetchProducts()
+    if (!products.length) throw new Error('Nenhum produto retornado pelo Supabase.')
+
+    productIdByKey.value = products.reduce<Partial<Record<ProductKey, string>>>((acc, product) => {
+      const key = product.product_key.replace('zero_lactose', 'zero') as ProductKey
+      acc[key] = String(product.id)
+      return acc
+    }, {})
+    appConfig.value = applyProductsToConfig(products, appConfig.value)
+    console.info(`[Peraí, tem pudim!] ${products.length} produtos carregados do Supabase.`)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Erro desconhecido ao carregar produtos do Supabase.'
+    productsLoadError.value = message
+    console.error('[Peraí, tem pudim!] Usando produtos locais como fallback.', error)
+  } finally {
+    productsLoading.value = false
+  }
+}
+
+function stopAdminOrdersRealtime() {
+  adminOrdersChannel?.unsubscribe()
+  adminOrdersChannel = null
+}
+
+function startAdminOrdersRealtime() {
+  if (!adminLoggedIn.value) return
+
+  try {
+    stopAdminOrdersRealtime()
+    const channel = supabase.channel(`admin-orders-${Date.now()}`)
+    channel.on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
+      void loadAdminOrders()
+    })
+    adminOrdersChannel = channel
+    channel.subscribe((status) => {
+      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+        adminOrdersChannel = null
+      }
+    })
+  } catch (error) {
+    adminOrdersChannel = null
+    console.warn('[Peraí, tem pudim!] Realtime de pedidos indisponível. Use Atualizar para recarregar.', error)
+  }
+}
+
+async function loadAdminOrders() {
+  if (!adminLoggedIn.value) return
+  adminOrdersLoading.value = true
+  adminOrdersError.value = ''
+  try {
+    adminOrders.value = await fetchAdminOrders()
+  } catch (error) {
+    adminOrdersError.value = error instanceof Error ? error.message : 'Não foi possível carregar os pedidos.'
+  } finally {
+    adminOrdersLoading.value = false
+  }
+}
+
+async function loadCheckoutFunnel() {
+  if (!adminLoggedIn.value) return
+  checkoutFunnelLoading.value = true
+  checkoutFunnelError.value = ''
+  try {
+    const [summary, abandoned] = await Promise.all([
+      fetchCheckoutFunnelSummary(checkoutFunnelRange.value),
+      fetchRecentAbandonedCheckoutSessions(checkoutFunnelRange.value),
+    ])
+    checkoutFunnelSummary.value = summary
+    abandonedCheckoutSessions.value = abandoned
+  } catch (error) {
+    checkoutFunnelError.value = error instanceof Error ? error.message : 'Não foi possível carregar o funil.'
+  } finally {
+    checkoutFunnelLoading.value = false
+  }
+}
+
+async function changeAdminOrderStatus(orderId: string, status: AdminOrderStatus) {
+  try {
+    await updateOrderStatus(orderId, status)
+    await loadAdminOrders()
+    adminError.value = 'Status do pedido atualizado.'
+  } catch (error) {
+    adminError.value = error instanceof Error ? error.message : 'Não foi possível atualizar o pedido.'
+  }
+}
+
+async function removeAdminOrder(orderId: string) {
+  try {
+    await deleteOrder(orderId)
+    adminOrders.value = adminOrders.value.filter((order) => order.id !== orderId)
+    adminError.value = 'Pedido removido.'
+  } catch (error) {
+    adminError.value = error instanceof Error ? error.message : 'Não foi possível remover o pedido.'
+  }
+}
+
 function removeDeliveryTimeSurcharge(index: number) {
   appConfig.value.deliveryPricing.timeSurcharges.splice(index, 1)
 }
@@ -1068,9 +1409,22 @@ function removeSavedOrder(orderId: string) {
   adminError.value = `Pedido #${orderId} removido.`
 }
 
-function saveAdminConfig() {
-  window.localStorage.setItem(appConfigStorageKey, JSON.stringify(appConfig.value))
-  adminError.value = 'Configurações salvas.'
+async function saveAdminConfig() {
+  adminSaving.value = true
+  adminError.value = 'Salvando configurações...'
+
+  try {
+    const savedProductsCount = await saveProductsToSupabase(appConfig.value)
+    window.localStorage.setItem(appConfigStorageKey, JSON.stringify(appConfig.value))
+    adminError.value = `Configurações salvas. ${savedProductsCount} produtos atualizados no Supabase.`
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Erro desconhecido ao salvar no Supabase.'
+    window.localStorage.setItem(appConfigStorageKey, JSON.stringify(appConfig.value))
+    adminError.value = `${message} As alterações foram salvas apenas neste navegador. Nenhum UPDATE anônimo foi enviado.`
+    console.error('[Peraí, tem pudim!] Salvamento no Supabase não realizado.', error)
+  } finally {
+    adminSaving.value = false
+  }
 }
 
 function resetAdminConfig() {
@@ -1079,41 +1433,108 @@ function resetAdminConfig() {
   adminError.value = 'Configurações restauradas.'
 }
 
-function loginAdmin() {
-  if (adminUser.value === adminCredentials.user && adminPassword.value === adminCredentials.password) {
+async function verifyAdminSession(session: Session | null) {
+  adminAuthLoading.value = true
+  adminAuthError.value = ''
+
+  try {
+    if (!session) {
+      adminSession.value = null
+      isAdmin.value = false
+      adminLoggedIn.value = false
+      return false
+    }
+
+    const { data, error } = await supabase.rpc('is_admin')
+    if (error) throw new Error(error.message)
+
+    if (!data) {
+      await supabase.auth.signOut()
+      adminSession.value = null
+      isAdmin.value = false
+      adminLoggedIn.value = false
+      adminAuthError.value = 'Você não possui acesso administrativo.'
+      return false
+    }
+
+    adminSession.value = session
+    isAdmin.value = true
     adminLoggedIn.value = true
-    window.localStorage.setItem(adminSessionStorageKey, adminCredentials.user)
+    adminEmail.value = session.user.email ?? adminEmail.value
+    adminAuthError.value = ''
     adminError.value = ''
-    return
+    void loadAdminOrders()
+    void loadCheckoutFunnel()
+    startAdminOrdersRealtime()
+    return true
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Erro ao verificar acesso administrativo.'
+    adminSession.value = null
+    isAdmin.value = false
+    adminLoggedIn.value = false
+    adminAuthError.value = message
+    return false
+  } finally {
+    adminAuthLoading.value = false
   }
-  adminError.value = 'Login ou senha inválidos.'
 }
 
-function logoutAdmin() {
+async function loginAdmin() {
+  adminAuthLoading.value = true
+  adminAuthError.value = ''
+  adminError.value = ''
+
+  try {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: adminEmail.value.trim(),
+      password: adminPassword.value,
+    })
+
+    if (error) throw new Error(error.message)
+    const allowed = await verifyAdminSession(data.session)
+    if (allowed) adminPassword.value = ''
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Não foi possível entrar no painel.'
+    adminAuthError.value = message
+    adminLoggedIn.value = false
+    isAdmin.value = false
+  } finally {
+    adminAuthLoading.value = false
+  }
+}
+
+async function logoutAdmin() {
+  stopAdminOrdersRealtime()
+  await supabase.auth.signOut()
   adminLoggedIn.value = false
+  isAdmin.value = false
+  adminSession.value = null
   adminPassword.value = ''
-  window.localStorage.removeItem(adminSessionStorageKey)
 }
 
-onMounted(() => {
+onMounted(async () => {
   appConfig.value = loadStoredConfig()
+  await loadProductsFromSupabase()
   loadSavedOrders()
   adminMode.value = new URLSearchParams(window.location.search).get('admin') === 'true'
-  const storedAdminSession = window.localStorage.getItem(adminSessionStorageKey)
-  if (adminMode.value && storedAdminSession === adminCredentials.user) {
-    adminUser.value = adminCredentials.user
-    adminLoggedIn.value = true
+  if (adminMode.value) {
+    adminAuthLoading.value = true
+    const { data } = await supabase.auth.getSession()
+    await verifyAdminSession(data.session)
   }
 
   window.addEventListener('storage', (event) => {
     if (event.key === ordersStorageKey) loadSavedOrders({ persistInitialOrders: false })
   })
   window.addEventListener('focus', () => {
-    if (adminMode.value) loadSavedOrders({ persistInitialOrders: false })
+    if (adminMode.value && adminLoggedIn.value) { void loadAdminOrders(); void loadCheckoutFunnel() }
   })
   document.addEventListener('visibilitychange', () => {
-    if (adminMode.value && !document.hidden) loadSavedOrders({ persistInitialOrders: false })
+    if (adminMode.value && adminLoggedIn.value && !document.hidden) { void loadAdminOrders(); void loadCheckoutFunnel() }
   })
+  authSubscription = supabase.auth.onAuthStateChange((_event, session) => {
+    if (adminMode.value) void verifyAdminSession(session)
+  }).data.subscription
   promoQueryEnabled.value = new URLSearchParams(window.location.search).get('promo') === 'true'
   shouldHighlightPromotion.value = promoQueryEnabled.value
 
@@ -1132,6 +1553,11 @@ onMounted(() => {
     }
   }, 2600)
 })
+
+onUnmounted(() => {
+  authSubscription?.unsubscribe()
+  stopAdminOrdersRealtime()
+})
 </script>
 
 <template>
@@ -1147,7 +1573,17 @@ onMounted(() => {
 
 
   <main v-if="adminMode" class="admin-shell">
-    <section v-if="!adminLoggedIn" class="admin-login-page">
+    <section v-if="adminAuthLoading && !adminLoggedIn" class="admin-login-page">
+      <section class="admin-login-form" aria-label="Verificando acesso">
+        <img :src="logoImage" alt="Peraí, tem pudim!" />
+        <div class="admin-heading">
+          <h1>Verificando acesso</h1>
+          <p>Aguarde um instante enquanto confirmamos sua sessão.</p>
+        </div>
+      </section>
+    </section>
+
+    <section v-else-if="!adminLoggedIn" class="admin-login-page">
       <aside class="admin-login-hero">
         <img class="admin-login-hero__brand" :src="logoImage" alt="Peraí, tem pudim!" />
         <img class="admin-login-hero__photo" :src="pudding500Image" alt="Pudim artesanal" />
@@ -1164,8 +1600,8 @@ onMounted(() => {
           <p>Acesse o painel para gerenciar pedidos, horários e produtos.</p>
         </div>
         <label class="field admin-login-field">
-          <span>Login</span>
-          <input v-model="adminUser" type="text" autocomplete="username" placeholder="admin" />
+          <span>E-mail</span>
+          <input v-model="adminEmail" type="email" autocomplete="username" placeholder="voce@email.com" />
         </label>
         <label class="field admin-login-field admin-password-field">
           <span>Senha</span>
@@ -1181,8 +1617,8 @@ onMounted(() => {
             <svg v-else viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 10.6A3 3 0 0 0 13.4 13.4"/><path d="M7.1 7.5C4.2 9.1 2.5 12 2.5 12s3.5 6 9.5 6c1.7 0 3.2-.5 4.4-1.2"/><path d="M10 6.2c.6-.1 1.3-.2 2-.2 6 0 9.5 6 9.5 6s-.9 1.6-2.6 3.1"/></svg>
           </button>
         </label>
-        <p v-if="adminError" class="error-text">{{ adminError }}</p>
-        <button class="admin-primary-button" type="button" @click="loginAdmin">Entrar</button>
+        <p v-if="adminAuthError || adminError" class="error-text">{{ adminAuthError || adminError }}</p>
+        <button class="admin-primary-button" type="button" :disabled="adminAuthLoading" @click="loginAdmin">{{ adminAuthLoading ? 'Entrando...' : 'Entrar' }}</button>
       </section>
     </section>
 
@@ -1207,8 +1643,8 @@ onMounted(() => {
           </button>
         </nav>
         <div class="admin-sidebar__footer">
-          <small>Logado como</small>
-          <strong>{{ adminUser }}</strong>
+          <small>Logada como</small>
+          <strong>{{ adminSession?.user.email || 'admin' }}</strong>
           <button class="admin-ghost-button" type="button" @click="logoutAdmin">Sair</button>
         </div>
       </aside>
@@ -1230,7 +1666,7 @@ onMounted(() => {
           </div>
           <div v-if="adminPage !== 'orders'" class="admin-save-row">
             <button class="admin-ghost-button" type="button" @click="resetAdminConfig">Restaurar</button>
-            <button class="admin-primary-button" type="button" @click="saveAdminConfig">Salvar alterações</button>
+            <button class="admin-primary-button" type="button" :disabled="adminSaving" @click="saveAdminConfig">{{ adminSaving ? 'Salvando...' : 'Salvar alterações' }}</button>
           </div>
         </div>
 
@@ -1239,21 +1675,50 @@ onMounted(() => {
         <template v-if="adminPage === 'dashboard'">
           <section class="admin-metrics-grid">
             <article class="admin-metric-card">
-              <span>🍮</span>
-              <div><strong>{{ adminTotalProducts }}</strong><small>Produtos cadastrados</small></div>
+              <span>▣</span>
+              <div><strong>{{ adminOrdersTotal }}</strong><small>Pedidos totais</small></div>
             </article>
             <article class="admin-metric-card">
-              <span>✅</span>
-              <div><strong>{{ adminAvailableProducts }}</strong><small>Disponíveis agora</small></div>
+              <span>◷</span>
+              <div><strong>{{ adminOrdersToday }}</strong><small>Pedidos hoje</small></div>
             </article>
             <article class="admin-metric-card">
-              <span>🏷️</span>
-              <div><strong>{{ adminPromotionProducts }}</strong><small>Itens em promoção</small></div>
+              <span>!</span>
+              <div><strong>{{ adminPendingOrders }}</strong><small>Novos pedidos</small></div>
             </article>
             <article class="admin-metric-card">
-              <span>💰</span>
-              <div><strong>{{ formatCurrency(adminAveragePrice) }}</strong><small>Preço médio normal</small></div>
+              <span>R$</span>
+              <div><strong>{{ formatCurrency(adminCompletedRevenue) }}</strong><small>Faturamento finalizado</small></div>
             </article>
+          </section>
+
+          <section class="admin-card-panel admin-funnel-panel">
+            <div class="admin-card-panel__header">
+              <div><h2>Funil de checkout</h2><p>Carrinhos iniciados, checkout e abandono calculado por inatividade de 2 horas.</p></div>
+              <div class="admin-funnel-tabs" role="group" aria-label="Período do funil">
+                <button type="button" :class="{ active: checkoutFunnelRange === 'today' }" @click="checkoutFunnelRange = 'today'">Hoje</button>
+                <button type="button" :class="{ active: checkoutFunnelRange === '7d' }" @click="checkoutFunnelRange = '7d'">7 dias</button>
+                <button type="button" :class="{ active: checkoutFunnelRange === '30d' }" @click="checkoutFunnelRange = '30d'">30 dias</button>
+              </div>
+            </div>
+            <p v-if="checkoutFunnelError" class="error-text">{{ checkoutFunnelError }}</p>
+            <div class="admin-funnel-grid" :class="{ loading: checkoutFunnelLoading }">
+              <article><span>🛒</span><strong>{{ checkoutFunnelSummary?.sessionsStarted ?? 0 }}</strong><small>Carrinhos iniciados</small></article>
+              <article><span>▣</span><strong>{{ checkoutFunnelSummary?.checkoutViewed ?? 0 }}</strong><small>Chegaram ao checkout</small></article>
+              <article><span>✓</span><strong>{{ checkoutFunnelSummary?.completed ?? 0 }}</strong><small>Pedidos concluídos</small></article>
+              <article><span>!</span><strong>{{ checkoutFunnelSummary?.abandoned ?? 0 }}</strong><small>Carrinhos abandonados</small></article>
+              <article><span>%</span><strong>{{ checkoutFunnelSummary?.cartToOrderConversionRate ?? 0 }}%</strong><small>Conversão do carrinho</small></article>
+              <article><span>R$</span><strong>{{ formatCurrency(checkoutFunnelSummary?.estimatedAbandonedCartValue ?? 0) }}</strong><small>Valor estimado abandonado</small></article>
+            </div>
+            <div v-if="abandonedCheckoutSessions.length" class="admin-abandoned-list">
+              <h3>Carrinhos abandonados recentes</h3>
+              <article v-for="session in abandonedCheckoutSessions" :key="session.sessionId">
+                <div><strong>{{ getCheckoutStepLabel(session.currentStep) }}</strong><small>{{ new Date(session.lastActivityAt).toLocaleString('pt-BR') }}</small></div>
+                <span>{{ session.itemsQuantity }} item(ns)</span>
+                <b>{{ formatCurrency(session.cartSubtotal) }}</b>
+                <small v-if="session.customerName || session.customerPhone">{{ session.customerName || 'Sem nome' }}<template v-if="session.customerPhone"> • {{ formatBrazilianPhone(session.customerPhone) }}</template></small>
+              </article>
+            </div>
           </section>
 
           <section class="admin-dashboard-grid">
@@ -1303,9 +1768,9 @@ onMounted(() => {
             <div class="admin-card-panel__header">
               <div>
                 <h2>Pedidos recebidos</h2>
-                <p>Lista dos pedidos salvos quando o cliente clica em enviar para o WhatsApp.</p>
+                <p>Lista dos pedidos recebidos pelo app.</p>
               </div>
-              <button class="admin-ghost-button" type="button" :disabled="!savedOrders.length" @click="clearSavedOrders">Limpar pedidos</button>
+              <button class="admin-ghost-button" type="button" :disabled="adminOrdersLoading" @click="loadAdminOrders">Atualizar</button>
             </div>
 
             <div class="admin-order-stats">
@@ -1319,7 +1784,7 @@ onMounted(() => {
               </article>
               <article>
                 <span>R$</span>
-                <div><strong>{{ formatCurrency(savedOrders.reduce((sum, order) => sum + order.total, 0)) }}</strong><small>Total registrado</small></div>
+                <div><strong>{{ formatCurrency(adminOrders.reduce((sum, order) => sum + order.total, 0)) }}</strong><small>Total registrado</small></div>
               </article>
             </div>
 
@@ -1327,54 +1792,99 @@ onMounted(() => {
               <span v-for="group in adminOrdersByDay" :key="group.day">{{ group.day }} • {{ group.count }} pedido(s)</span>
             </div>
 
-            <div v-if="!savedOrders.length" class="admin-empty-orders">
-              <strong>Nenhum pedido salvo ainda.</strong>
-              <span>Quando um cliente finalizar pelo WhatsApp, o pedido aparece aqui.</span>
+            <p v-if="adminOrdersError" class="error-text">{{ adminOrdersError }}</p>
+            <div v-if="adminOrdersLoading" class="admin-empty-orders">
+              <strong>Carregando pedidos...</strong>
             </div>
 
-            <div v-else class="admin-orders-list">
-              <details v-for="order in savedOrders" :key="order.id" class="admin-order-card">
-                <summary class="admin-order-card__summary">
-                  <div>
-                    <strong>Pedido #{{ order.id }}</strong>
-                    <small>{{ new Date(order.createdAt).toLocaleString('pt-BR') }}</small>
-                  </div>
-                  <div>
-                    <span>{{ order.customerName }}</span>
-                    <small>{{ deliveryLabels[order.deliveryMode] }} • {{ order.desiredDate }}<template v-if="order.desiredTimeSlot"> • {{ order.desiredTimeSlot }}</template></small>
-                  </div>
-                  <b>{{ formatCurrency(order.total) }}</b>
-                  <button class="admin-order-delete" type="button" @click.prevent="removeSavedOrder(order.id)">Excluir</button>
-                  <i aria-hidden="true">⌄</i>
-                </summary>
+            <div v-else-if="!adminOrders.length" class="admin-empty-orders">
+              <strong>Nenhum pedido recebido ainda.</strong>
+              <span>Quando um cliente fizer pedido pelo app, ele aparece aqui.</span>
+            </div>
 
-                <div class="admin-order-card__content">
-                  <div class="admin-order-card__meta">
-                    <div><small>Cliente</small><strong>{{ order.customerName }}</strong></div>
-                    <div><small>Recebimento</small><strong>{{ deliveryLabels[order.deliveryMode] }}</strong></div>
-                    <div><small>Data</small><strong>{{ order.desiredDate }}</strong></div>
-                    <div v-if="order.desiredTimeSlot"><small>Horário</small><strong>{{ order.desiredTimeSlot }}</strong></div>
-                    <div><small>Entrega</small><strong>{{ order.deliveryFeeLabel }}</strong></div>
+            <div v-else class="admin-kanban-board" aria-label="Kanban de pedidos">
+              <section v-for="column in adminKanbanOrders" :key="column.status" class="admin-kanban-column">
+                <header class="admin-kanban-column__header">
+                  <div>
+                    <span class="admin-kanban-column__check" aria-hidden="true"></span>
+                    <strong>{{ column.title }}</strong>
                   </div>
+                  <b>{{ column.orders.length }}</b>
+                </header>
 
-                  <div class="admin-order-items">
-                    <div v-for="item in order.items" :key="`${order.id}-${item.name}-${item.details}`">
-                      <img :src="getOrderItemImage(item)" alt="" />
-                      <span>{{ item.quantity }}x {{ item.name }}</span>
-                      <strong>{{ formatCurrency(item.total) }}</strong>
-                      <small>{{ item.details }}<template v-if="item.promotionLabel"> • {{ item.promotionLabel }}</template></small>
+                <div class="admin-kanban-column__body">
+                  <article v-for="order in column.orders" :key="order.id" class="admin-kanban-card" :class="{ 'has-promotion': hasAdminOrderPromotion(order) }">
+                    <div class="admin-kanban-card__topline">
+                      <label><input type="checkbox" aria-label="Selecionar pedido" /></label>
+                      <strong>{{ formatOrderNumber(order.orderNumber) }}</strong>
+                      <b>{{ formatCurrency(order.total) }}</b>
                     </div>
-                  </div>
 
-                  <div class="admin-order-details">
-                    <strong>Dados do pedido</strong>
-                    <pre>{{ order.deliveryDetails }}</pre>
-                    <p v-if="order.deliveryDistanceKm">Distância aproximada: {{ formatDistance(order.deliveryDistanceKm) }}</p>
-                    <p v-if="order.notes">Observações: {{ order.notes }}</p>
-                    <p>Subtotal: {{ formatCurrency(order.subtotal) }} • Total: {{ formatCurrency(order.total) }}</p>
-                  </div>
+                    <div class="admin-kanban-card__customer">
+                      <span>{{ order.customerName }}</span>
+                      <small>{{ getAdminOrderDateLabel(order) }}</small>
+                    </div>
+
+                    <div class="admin-kanban-tags">
+                      <span>{{ order.fulfillmentType === 'delivery' ? 'Entrega' : 'Retirada' }}</span>
+                      <span v-if="hasAdminOrderPromotion(order)" class="promo">Promoção</span>
+                    </div>
+
+                    <div class="admin-kanban-card__contact">
+                      <span>{{ formatBrazilianPhone(order.customerPhone) }}</span>
+                      <a
+                        v-if="getAdminOrderWhatsappUrl(order)"
+                        :href="getAdminOrderWhatsappUrl(order)"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >WhatsApp</a>
+                    </div>
+
+                    <p class="admin-kanban-card__address">{{ getAdminOrderShortAddress(order) }}</p>
+
+                    <div class="admin-kanban-items">
+                      <div v-for="item in order.items" :key="item.id">
+                        <img :src="getOrderItemImage(item)" alt="" />
+                        <span>{{ item.quantity }}x {{ item.productName }}</span>
+                        <small>{{ getAdminOrderItemDetails(item) }} • {{ formatCurrency(item.unitPrice) }}</small>
+                        <em v-if="isAdminOrderItemPromotion(item)">Promoção</em>
+                      </div>
+                    </div>
+
+                    <details class="admin-kanban-details">
+                      <summary>Ver detalhes</summary>
+                      <pre>{{ getAdminDeliveryDetails(order) }}</pre>
+                      <p v-if="order.distanceKm">Distância: {{ formatDistance(order.distanceKm) }}</p>
+                      <p v-if="order.customerNotes">Observações: {{ order.customerNotes }}</p>
+                      <p>Subtotal: {{ formatCurrency(order.subtotal) }} • Entrega: {{ formatCurrency(order.deliveryFee) }}</p>
+                      <label class="field"><span>Status</span><select :value="order.status" @change="changeAdminOrderStatus(order.id, ($event.target as HTMLSelectElement).value as AdminOrderStatus)">
+                        <option v-for="(label, status) in adminOrderStatusLabels" :key="status" :value="status">{{ label }}</option>
+                      </select></label>
+                    </details>
+
+                    <div class="admin-kanban-actions">
+                      <button
+                        v-if="getAdminOrderPreviousStatus(order)"
+                        class="admin-kanban-back"
+                        type="button"
+                        @click="changeAdminOrderStatus(order.id, getAdminOrderPreviousStatus(order)!)"
+                      >Voltar</button>
+                      <button
+                        v-if="getAdminOrderNextStatus(order)"
+                        class="admin-kanban-next"
+                        type="button"
+                        @click="changeAdminOrderStatus(order.id, getAdminOrderNextStatus(order)!)"
+                      >{{ getAdminOrderNextLabel(order) }}</button>
+                      <button
+                        v-if="order.status !== 'cancelled' && order.status !== 'completed'"
+                        class="admin-kanban-cancel"
+                        type="button"
+                        @click="changeAdminOrderStatus(order.id, 'cancelled')"
+                      >Cancelar</button>
+                    </div>
+                  </article>
                 </div>
-              </details>
+              </section>
             </div>
           </section>
         </template>
@@ -1384,7 +1894,7 @@ onMounted(() => {
             <div class="admin-card-panel__header">
               <div>
                 <h2>Cálculo de frete</h2>
-                <p>Escolha se o cliente verá o frete calculado no checkout ou se a taxa ficará a confirmar pelo WhatsApp.</p>
+                <p>Escolha se o cliente verá o frete calculado no checkout ou se a taxa ficará a confirmar no pedido.</p>
               </div>
               <label class="admin-switch admin-switch--compact"><input v-model="appConfig.deliveryPricing.enabled" type="checkbox" /><span><strong>{{ appConfig.deliveryPricing.enabled ? 'Cálculo ativo' : 'A confirmar' }}</strong></span></label>
             </div>
@@ -1546,7 +2056,7 @@ onMounted(() => {
                 <div><span>Encomendas</span><strong>{{ appConfig.availability.scheduledOrders ? 'Ativas' : 'Off' }}</strong></div>
                 <div><span>Preço médio</span><strong>{{ formatCurrency(adminAveragePrice) }}</strong></div>
               </div>
-              <button class="admin-primary-button" type="button" @click="saveAdminConfig">Salvar configurações</button>
+              <button class="admin-primary-button" type="button" :disabled="adminSaving" @click="saveAdminConfig">{{ adminSaving ? 'Salvando...' : 'Salvar configurações' }}</button>
             </aside>
           </div>
         </template>
@@ -1557,7 +2067,7 @@ onMounted(() => {
 
   <main v-else class="page-shell">
     <header class="site-header">
-      <button v-if="currentPage !== 'order' && currentPage !== 'start'" class="back-button" type="button" aria-label="Voltar" @click="currentPage === 'checkout' ? openDetailsPage() : currentPage === 'details' ? openOrderPage() : openStartPage()">
+      <button v-if="currentPage !== 'order' && currentPage !== 'start' && currentPage !== 'success'" class="back-button" type="button" aria-label="Voltar" @click="currentPage === 'checkout' ? openDetailsPage() : currentPage === 'details' ? openOrderPage() : openStartPage()">
         ‹
       </button>
       <button v-else class="brand" type="button" aria-label="Peraí, tem pudim!" @click="openOrderPage()">
@@ -1568,7 +2078,7 @@ onMounted(() => {
         </span>
       </button>
       <strong class="app-title">
-        {{ currentPage === 'checkout' ? 'Finalizar pedido' : currentPage === 'details' ? 'Recebimento' : currentPage === 'order' ? 'Monte seu pedido' : promoQueryEnabled ? 'Oferta Especial' : 'Como pedir' }}
+        {{ currentPage === 'success' ? 'Pedido recebido' : currentPage === 'checkout' ? 'Finalizar pedido' : currentPage === 'details' ? 'Recebimento' : currentPage === 'order' ? 'Monte seu pedido' : promoQueryEnabled ? 'Oferta Especial' : 'Como pedir' }}
       </strong>
       <button class="cart-icon-button" type="button" aria-label="Ver carrinho" :disabled="!itemAdded" @click="openDetailsPage">
         <span aria-hidden="true">▢</span>
@@ -1756,6 +2266,23 @@ onMounted(() => {
             </label>
             <p v-if="customerNameError" id="customer-name-error" class="error-text">{{ customerNameError }}</p>
 
+            <label class="field">
+              <span>Telefone</span>
+              <input
+                v-model="customerPhone"
+                type="tel"
+                required
+                inputmode="tel"
+                autocomplete="tel"
+                placeholder="(62) 99999-9999"
+                maxlength="15"
+                @input="formatCustomerPhoneInput"
+                :aria-invalid="Boolean(customerPhoneError)"
+                aria-describedby="customer-phone-error"
+              />
+            </label>
+            <p v-if="customerPhoneError" id="customer-phone-error" class="error-text">{{ customerPhoneError }}</p>
+
             <div v-if="orderMode === 'scheduled'" class="scheduled-fields">
               <label class="field">
                 <span>Data desejada</span>
@@ -1855,7 +2382,7 @@ onMounted(() => {
               </div>
               <div v-if="!isDeliveryCalculationEnabled" class="delivery-status delivery-status--manual">
                 <strong>Taxa de entrega: A confirmar</strong>
-                <span>Vamos confirmar o valor da entrega pelo WhatsApp antes de finalizar.</span>
+                <span>Vamos confirmar o valor da entrega antes de finalizar.</span>
               </div>
               <label class="field field--wide">
                 <span>Complemento (opcional)</span>
@@ -1886,7 +2413,7 @@ onMounted(() => {
         </section>
       </template>
 
-      <template v-else>
+      <template v-else-if="currentPage === 'checkout'">
         <section class="panel cart-panel">
           <div class="section-heading">
             <div>
@@ -1899,14 +2426,21 @@ onMounted(() => {
             <article v-for="item in cartItems" :key="item.id" class="cart-item cart-item--featured">
               <img :src="item.image" alt="" />
               <div>
-                <strong>Pudim {{ flavorLabels[item.flavor] }}</strong>
+                <div class="cart-item__title-row">
+                  <strong>Pudim {{ flavorLabels[item.flavor] }}</strong>
+                  <button class="cart-item__remove" type="button" aria-label="Remover Pudim {{ flavorLabels[item.flavor] }}" @click="removeCartItem(item.id)">
+                    <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+                      <path d="M4 7h16" />
+                      <path d="M10 11v6M14 11v6" />
+                      <path d="M6 7l1 13h10l1-13" />
+                      <path d="M9 7V4h6v3" />
+                    </svg>
+                  </button>
+                </div>
                 <small>{{ typeLabels[item.puddingType] }} • {{ sizeLabels[item.size] }} • {{ item.quantity }} unidade(s)</small>
                 <em v-if="item.promotionLabel" class="cart-item__promo">{{ item.promotionLabel }}</em>
                 <b><s v-if="item.originalUnitPrice">{{ formatCurrency(item.originalUnitPrice * item.quantity) }}</s>{{ formatCurrency(item.total) }}</b>
               </div>
-              <button class="cart-item__remove" type="button" aria-label="Remover item" @click="removeCartItem(item.id)">
-                Remover
-              </button>
             </article>
           </div>
 
@@ -1938,6 +2472,54 @@ onMounted(() => {
         </div>
       </template>
 
+      <template v-else-if="currentPage === 'success'">
+        <section class="panel success-panel">
+          <div class="success-card">
+            <div class="success-card__hero">
+              <div>
+                <h2>Pedido recebido!</h2>
+                <p>Recebemos seu pedido com sucesso.</p>
+              </div>
+            </div>
+
+            <p class="success-card__message">Agora vamos verificar a disponibilidade e entrar em contato para confirmar o pedido e o pagamento.</p>
+
+            <div v-if="currentCreatedOrder" class="success-summary">
+              <div class="success-summary__highlight">
+                <span>Número do pedido</span>
+                <strong>{{ formatOrderNumber(currentCreatedOrder.order_number) }}</strong>
+              </div>
+              <div class="success-summary__highlight">
+                <span>Status</span>
+                <strong class="success-status">Aguardando confirmação</strong>
+              </div>
+              <div><span>Nome</span><strong>{{ customerName }}</strong></div>
+              <div class="success-summary__phone"><span>Telefone</span><strong>{{ formatBrazilianPhone(customerPhone) }}</strong><small>É por este número que entraremos em contato.</small></div>
+              <div><span>Data</span><strong>{{ formatDate(effectiveDesiredDate) }}</strong></div>
+              <div v-if="desiredTimeSlot"><span>Horário</span><strong>{{ desiredTimeSlot }}</strong></div>
+              <div><span>Recebimento</span><strong>{{ deliveryLabels[deliveryMode] }}</strong></div>
+              <div class="success-summary__highlight"><span>Total</span><strong>{{ formatCurrency(currentCreatedOrder.total) }}</strong></div>
+            </div>
+
+            <div v-if="createdOrderItems.length" class="success-items">
+              <h3>Itens do pedido</h3>
+              <article v-for="item in createdOrderItems" :key="item.id" class="success-item">
+                <img :src="item.image" :alt="`Pudim ${flavorLabels[item.flavor]}`" />
+                <div>
+                  <strong>{{ item.quantity }}x Pudim {{ flavorLabels[item.flavor] }}</strong>
+                  <span>{{ typeLabels[item.puddingType] }} • {{ sizeLabels[item.size] }} • {{ formatCurrency(item.total) }}</span>
+                </div>
+              </article>
+            </div>
+
+            <div class="success-actions">
+              <button class="mobile-checkout__button" type="button" @click="goHomeFromSuccess">Voltar ao início</button>
+              <button class="add-more-button" type="button" @click="startAnotherOrder">Fazer outro pedido</button>
+            </div>
+          </div>
+        </section>
+      </template>
+
       <div v-if="canShowAddButton" class="mobile-checkout mobile-checkout--add">
         <small v-if="selectedProductAvailabilityError || selectedPromotionalMinimumError" class="minimum-inline-error">{{ selectedProductAvailabilityError || selectedPromotionalMinimumError }}</small>
         <div class="mobile-checkout__quantity-row">
@@ -1949,10 +2531,11 @@ onMounted(() => {
       </div>
 
       <div v-if="canShowSendButton" class="mobile-checkout mobile-checkout--send">
-        <button class="mobile-checkout__button" type="submit">
-          Confirmar pedido • {{ formatCurrency(total) }}
+        <button class="mobile-checkout__button" type="submit" :disabled="submitLoading">
+          {{ submitLoading ? 'Enviando pedido...' : `Enviar pedido • ${formatCurrency(total)}` }}
         </button>
-        <small class="text-center">✅ Seu pedido já está pronto. Ao tocar em "Confirmar pedido", o WhatsApp abrirá com a mensagem preenchida.</small>
+        <small v-if="submitError" class="minimum-inline-error">{{ submitError }}</small>
+        <small class="text-center">Você receberá a confirmação pelo telefone informado.</small>
       </div>
 
       <div v-if="currentPage === 'details' && itemAdded" class="mobile-checkout">

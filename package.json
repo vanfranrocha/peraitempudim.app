@@ -17,6 +17,7 @@
   },
   "devDependencies": {
     "sass": "^1.89.2",
+    "supabase": "^2.110.0",
     "typescript": "^5.8.3",
     "vue-tsc": "^2.2.10"
   }
