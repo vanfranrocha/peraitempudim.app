@@ -182,6 +182,10 @@ const showAdminPassword = ref(false)
 const adminError = ref('')
 const adminAuthLoading = ref(false)
 const adminAuthError = ref('')
+const adminAuthMessage = ref('')
+const newPassword = ref('')
+const confirmNewPassword = ref('')
+const isPasswordRecovery = ref(false)
 const adminSession = ref<Session | null>(null)
 const isAdmin = ref(false)
 const savedOrders = ref<SavedOrder[]>([])
@@ -1479,9 +1483,77 @@ async function verifyAdminSession(session: Session | null) {
   }
 }
 
+async function requestPasswordReset() {
+  adminAuthError.value = ''
+  adminAuthMessage.value = ''
+
+  const email = adminEmail.value.trim()
+
+  if (!email) {
+    adminAuthError.value = 'Informe seu e-mail.'
+    return
+  }
+
+  adminAuthLoading.value = true
+
+  try {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/?admin=true&reset-password=true`,
+    })
+
+    if (error) throw error
+
+    adminAuthMessage.value = 'Enviamos um link de recuperação para seu e-mail.'
+  } catch (error) {
+    adminAuthError.value = error instanceof Error ? error.message : 'Não foi possível enviar o link de recuperação.'
+  } finally {
+    adminAuthLoading.value = false
+  }
+}
+
+async function updateRecoveredPassword() {
+  adminAuthError.value = ''
+  adminAuthMessage.value = ''
+
+  if (newPassword.value.length < 8) {
+    adminAuthError.value = 'A nova senha precisa ter pelo menos 8 caracteres.'
+    return
+  }
+
+  if (newPassword.value !== confirmNewPassword.value) {
+    adminAuthError.value = 'As senhas não conferem.'
+    return
+  }
+
+  adminAuthLoading.value = true
+
+  try {
+    const { error } = await supabase.auth.updateUser({
+      password: newPassword.value,
+    })
+
+    if (error) throw error
+
+    adminAuthMessage.value = 'Senha alterada com sucesso.'
+    await supabase.auth.signOut()
+    newPassword.value = ''
+    confirmNewPassword.value = ''
+    isPasswordRecovery.value = false
+    adminLoggedIn.value = false
+    isAdmin.value = false
+    adminSession.value = null
+    window.history.replaceState({}, '', `${window.location.pathname}?admin=true`)
+  } catch (error) {
+    adminAuthError.value = error instanceof Error ? error.message : 'Não foi possível alterar a senha.'
+  } finally {
+    adminAuthLoading.value = false
+  }
+}
+
 async function loginAdmin() {
   adminAuthLoading.value = true
   adminAuthError.value = ''
+  adminAuthMessage.value = ''
   adminError.value = ''
 
   try {
@@ -1510,14 +1582,18 @@ async function logoutAdmin() {
   isAdmin.value = false
   adminSession.value = null
   adminPassword.value = ''
+  isPasswordRecovery.value = false
 }
+
 
 onMounted(async () => {
   appConfig.value = loadStoredConfig()
   await loadProductsFromSupabase()
   loadSavedOrders()
-  adminMode.value = new URLSearchParams(window.location.search).get('admin') === 'true'
-  if (adminMode.value) {
+  const initialParams = new URLSearchParams(window.location.search)
+  adminMode.value = initialParams.get('admin') === 'true'
+  isPasswordRecovery.value = initialParams.get('reset-password') === 'true'
+  if (adminMode.value && !isPasswordRecovery.value) {
     adminAuthLoading.value = true
     const { data } = await supabase.auth.getSession()
     await verifyAdminSession(data.session)
@@ -1532,8 +1608,18 @@ onMounted(async () => {
   document.addEventListener('visibilitychange', () => {
     if (adminMode.value && adminLoggedIn.value && !document.hidden) { void loadAdminOrders(); void loadCheckoutFunnel() }
   })
-  authSubscription = supabase.auth.onAuthStateChange((_event, session) => {
-    if (adminMode.value) void verifyAdminSession(session)
+  authSubscription = supabase.auth.onAuthStateChange((event, session) => {
+    if (!adminMode.value) return
+    if (event === 'PASSWORD_RECOVERY') {
+      isPasswordRecovery.value = true
+      adminLoggedIn.value = false
+      adminAuthError.value = ''
+      adminAuthMessage.value = ''
+      adminSession.value = session
+      return
+    }
+    if (isPasswordRecovery.value) return
+    void verifyAdminSession(session)
   }).data.subscription
   promoQueryEnabled.value = new URLSearchParams(window.location.search).get('promo') === 'true'
   shouldHighlightPromotion.value = promoQueryEnabled.value
@@ -1573,13 +1659,43 @@ onUnmounted(() => {
 
 
   <main v-if="adminMode" class="admin-shell">
-    <section v-if="adminAuthLoading && !adminLoggedIn" class="admin-login-page">
+    <section v-if="adminAuthLoading && !adminLoggedIn && !isPasswordRecovery" class="admin-login-page">
       <section class="admin-login-form" aria-label="Verificando acesso">
         <img :src="logoImage" alt="Peraí, tem pudim!" />
         <div class="admin-heading">
           <h1>Verificando acesso</h1>
           <p>Aguarde um instante enquanto confirmamos sua sessão.</p>
         </div>
+      </section>
+    </section>
+
+    <section v-else-if="isPasswordRecovery" class="admin-login-page">
+      <aside class="admin-login-hero">
+        <img class="admin-login-hero__brand" :src="logoImage" alt="Peraí, tem pudim!" />
+        <img class="admin-login-hero__photo" :src="pudding500Image" alt="Pudim artesanal" />
+        <div>
+          <strong>Crie uma nova senha</strong>
+          <small>Depois de alterar, entre novamente no painel administrativo.</small>
+        </div>
+      </aside>
+
+      <section class="admin-login-form" aria-label="Recuperação de senha do admin">
+        <img :src="logoImage" alt="Peraí, tem pudim!" />
+        <div class="admin-heading">
+          <h1>Nova senha</h1>
+          <p>Informe uma nova senha com pelo menos 8 caracteres.</p>
+        </div>
+        <label class="field admin-login-field">
+          <span>Nova senha</span>
+          <input v-model="newPassword" type="password" autocomplete="new-password" placeholder="Digite a nova senha" />
+        </label>
+        <label class="field admin-login-field">
+          <span>Confirmar nova senha</span>
+          <input v-model="confirmNewPassword" type="password" autocomplete="new-password" placeholder="Repita a nova senha" @keydown.enter="updateRecoveredPassword" />
+        </label>
+        <p v-if="adminAuthError" class="error-text">{{ adminAuthError }}</p>
+        <p v-if="adminAuthMessage" class="admin-auth-message">{{ adminAuthMessage }}</p>
+        <button class="admin-primary-button" type="button" :disabled="adminAuthLoading" @click="updateRecoveredPassword">{{ adminAuthLoading ? 'Alterando...' : 'Alterar senha' }}</button>
       </section>
     </section>
 
@@ -1617,7 +1733,9 @@ onUnmounted(() => {
             <svg v-else viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 10.6A3 3 0 0 0 13.4 13.4"/><path d="M7.1 7.5C4.2 9.1 2.5 12 2.5 12s3.5 6 9.5 6c1.7 0 3.2-.5 4.4-1.2"/><path d="M10 6.2c.6-.1 1.3-.2 2-.2 6 0 9.5 6 9.5 6s-.9 1.6-2.6 3.1"/></svg>
           </button>
         </label>
+        <button class="admin-forgot-password" type="button" :disabled="adminAuthLoading" @click="requestPasswordReset">Esqueci minha senha</button>
         <p v-if="adminAuthError || adminError" class="error-text">{{ adminAuthError || adminError }}</p>
+        <p v-if="adminAuthMessage" class="admin-auth-message">{{ adminAuthMessage }}</p>
         <button class="admin-primary-button" type="button" :disabled="adminAuthLoading" @click="loginAdmin">{{ adminAuthLoading ? 'Entrando...' : 'Entrar' }}</button>
       </section>
     </section>

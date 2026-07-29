@@ -5064,3 +5064,30 @@ a {
     grid-template-columns: 1fr;
   }
 }
+
+.admin-auth-message {
+  margin: 0;
+  border: 1px solid rgba(64, 118, 62, 0.2);
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: rgba(64, 118, 62, 0.1);
+  color: #315f31;
+  font-weight: 850;
+  line-height: 1.3;
+}
+
+.admin-forgot-password {
+  justify-self: start;
+  min-height: 38px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--brown-coffee);
+  font-weight: 900;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.admin-forgot-password:disabled {
+  opacity: 0.6;
+}
