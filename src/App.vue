@@ -1817,6 +1817,7 @@ onUnmounted(() => {
                 <button type="button" :class="{ active: checkoutFunnelRange === 'today' }" @click="checkoutFunnelRange = 'today'">Hoje</button>
                 <button type="button" :class="{ active: checkoutFunnelRange === '7d' }" @click="checkoutFunnelRange = '7d'">7 dias</button>
                 <button type="button" :class="{ active: checkoutFunnelRange === '30d' }" @click="checkoutFunnelRange = '30d'">30 dias</button>
+                <button type="button" :disabled="checkoutFunnelLoading" @click="loadCheckoutFunnel">{{ checkoutFunnelLoading ? 'Atualizando...' : 'Atualizar' }}</button>
               </div>
             </div>
             <p v-if="checkoutFunnelError" class="error-text">{{ checkoutFunnelError }}</p>
