@@ -34,6 +34,7 @@ export type CheckoutSessionListItem = {
     product_id?: string
     product_key?: string
     quantity?: number
+    promotion_applied?: boolean
   }>
   isAbandoned: boolean
 }
@@ -114,4 +115,10 @@ export async function fetchCheckoutSessions(range: FunnelRange) {
     cartItems: Array.isArray(row.cart_items) ? row.cart_items : [],
     isAbandoned: Boolean(row.is_abandoned),
   })) satisfies CheckoutSessionListItem[]
+}
+
+
+export async function deleteCheckoutSession(sessionId: string) {
+  const { error } = await supabase.rpc('delete_checkout_session', { target_session_id: sessionId })
+  if (error) throw new Error(`Falha ao remover sessão do funil: ${error.message}`)
 }

@@ -42,7 +42,7 @@ import { supabase } from './lib/supabase'
 import { adminOrderStatusLabels, deleteOrder, fetchAdminOrders, updateOrderStatus, type AdminOrder, type AdminOrderStatus } from './services/adminOrders'
 import { createOrder, type CreateOrderResult } from './services/orders'
 import { getOrCreateCheckoutSessionId, resetCheckoutSession, trackCartStarted, trackCheckoutViewed, trackDetailsStarted } from './services/checkoutTracking'
-import { fetchCheckoutFunnelSummary, fetchCheckoutSessions, fetchRecentAbandonedCheckoutSessions, type AbandonedCheckoutSession, type CheckoutFunnelSummary, type CheckoutSessionListItem, type FunnelRange } from './services/checkoutAnalytics'
+import { deleteCheckoutSession, fetchCheckoutFunnelSummary, fetchCheckoutSessions, fetchRecentAbandonedCheckoutSessions, type AbandonedCheckoutSession, type CheckoutFunnelSummary, type CheckoutSessionListItem, type FunnelRange } from './services/checkoutAnalytics'
 import { applyProductsToConfig, fetchProducts, saveProductsToSupabase } from './services/products'
 
 const appConfigStorageKey = 'perai-tem-pudim-config'
@@ -198,6 +198,7 @@ const abandonedCheckoutSessions = ref<AbandonedCheckoutSession[]>([])
 const checkoutSessions = ref<CheckoutSessionListItem[]>([])
 const checkoutFunnelLoading = ref(false)
 const checkoutFunnelError = ref('')
+const removingCheckoutSessionId = ref<string | null>(null)
 const productsLoading = ref(false)
 const productsLoadError = ref('')
 const adminSaving = ref(false)
@@ -211,7 +212,7 @@ const customerName = ref('')
 const customerPhone = ref('')
 const desiredDate = ref('')
 const desiredTimeSlot = ref('')
-const deliveryMode = ref<DeliveryMode>('retirada')
+const deliveryMode = ref<DeliveryMode>('entrega')
 const cep = ref('')
 const neighborhood = ref('')
 const address = ref('')
@@ -687,8 +688,8 @@ function setProductOrderMode(key: ProductKey, mode: ProductOrderMode, value: boo
 
 
 const deliveryOptions = [
-  { label: 'Retirada', value: 'retirada' as const, icon: 'pickup' as const },
   { label: 'Entrega', value: 'entrega' as const, icon: 'delivery' as const },
+  { label: 'Retirada', value: 'retirada' as const, icon: 'pickup' as const },
 ]
 
 const selectedSizeImage = computed(() => sizeOptions.value.find((option) => option.value === size.value)?.image ?? pudding500Image)
@@ -853,6 +854,26 @@ function getCheckoutProductLabel(productKey?: string) {
   const flavor = productKey.includes('_cafe_') ? 'Café' : 'Tradicional'
   const size = productKey.endsWith('180ml') ? '180 ml' : productKey.endsWith('500ml') ? '500 ml' : productKey.endsWith('1kg') ? '1 kg' : ''
   return `Pudim ${flavor} • ${type}${size ? ` • ${size}` : ''}`
+}
+
+function isCheckoutItemPromotional(item: CheckoutSessionListItem['cartItems'][number]) {
+  return Boolean(item.promotion_applied)
+}
+
+async function removeCheckoutSession(sessionId: string) {
+  if (removingCheckoutSessionId.value) return
+  removingCheckoutSessionId.value = sessionId
+  checkoutFunnelError.value = ''
+  try {
+    await deleteCheckoutSession(sessionId)
+    checkoutSessions.value = checkoutSessions.value.filter((session) => session.sessionId !== sessionId)
+    await loadCheckoutFunnel()
+    adminError.value = 'Item removido do funil.'
+  } catch (error) {
+    checkoutFunnelError.value = error instanceof Error ? error.message : 'Não foi possível remover o item do funil.'
+  } finally {
+    removingCheckoutSessionId.value = null
+  }
 }
 
 function getAdminDeliveryDetails(order: AdminOrder) {
@@ -1271,6 +1292,7 @@ function buildCheckoutTrackingPayload(includeCustomer = false) {
       product_id: item.productId,
       product_key: item.productKey,
       quantity: item.quantity,
+      promotion_applied: Boolean(item.promotionLabel),
     })),
   }
 }
@@ -2079,9 +2101,19 @@ onUnmounted(() => {
                     <strong>{{ getCheckoutStatusLabel(session.status) }}</strong>
                     <small>{{ getCheckoutStepLabel(session.currentStep) }} • {{ new Date(session.lastActivityAt).toLocaleString('pt-BR') }}</small>
                   </div>
-                  <span v-if="session.isAbandoned">Abandonado</span>
-                  <span v-else-if="session.status === 'completed'">Concluído</span>
-                  <span v-else>Em andamento</span>
+                  <div class="admin-funnel-session-actions">
+                    <span v-if="session.isAbandoned">Abandonado</span>
+                    <span v-else-if="session.status === 'completed'">Concluído</span>
+                    <span v-else>Em andamento</span>
+                    <button class="admin-funnel-remove cart-item__remove" type="button" :disabled="removingCheckoutSessionId === session.sessionId" aria-label="Remover item do funil" title="Remover do funil" @click.stop="removeCheckoutSession(session.sessionId)">
+                      <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+                        <path d="M4 7h16" />
+                        <path d="M10 11v6M14 11v6" />
+                        <path d="M6 7l1 13h10l1-13" />
+                        <path d="M9 7V4h6v3" />
+                      </svg>
+                    </button>
+                  </div>
                 </header>
 
                 <div class="admin-funnel-session-meta">
@@ -2103,6 +2135,7 @@ onUnmounted(() => {
                 <div v-if="session.cartItems.length" class="admin-funnel-products">
                   <div v-for="(item, index) in session.cartItems" :key="`${session.sessionId}-${index}`">
                     <span>{{ item.quantity || 0 }}x {{ getCheckoutProductLabel(item.product_key) }}</span>
+                    <em v-if="isCheckoutItemPromotional(item)">Promoção</em>
                   </div>
                 </div>
               </article>

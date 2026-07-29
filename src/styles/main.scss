@@ -5141,7 +5141,15 @@ a {
   font-weight: 800;
 }
 
-.admin-funnel-session-card header > span {
+.admin-funnel-session-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.admin-funnel-session-actions > span {
   border-radius: 999px;
   padding: 6px 10px;
   background: #fff0df;
@@ -5149,6 +5157,43 @@ a {
   font-size: 0.82rem;
   font-weight: 950;
   white-space: nowrap;
+}
+
+.admin-funnel-remove {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgba(122, 43, 22, 0.16);
+  border-radius: 12px;
+  background: var(--white);
+  color: var(--brown-coffee);
+  cursor: pointer;
+  transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
+}
+
+.admin-funnel-remove svg {
+  width: 18px;
+  height: 18px;
+}
+
+.admin-funnel-remove path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.admin-funnel-remove:hover:not(:disabled) {
+  border-color: rgba(122, 43, 22, 0.32);
+  background: #fff4ea;
+  transform: translateY(-1px);
+}
+
+.admin-funnel-remove:disabled {
+  opacity: 0.55;
+  cursor: wait;
 }
 
 .admin-funnel-session-meta {
@@ -5197,11 +5242,26 @@ a {
 }
 
 .admin-funnel-products div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   border-radius: 12px;
   padding: 9px 10px;
   background: rgba(255, 255, 255, 0.72);
   color: var(--brown-dark);
   font-weight: 850;
+}
+
+.admin-funnel-products em {
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: #ffe4bd;
+  color: #8c2f1e;
+  font-size: 0.76rem;
+  font-style: normal;
+  font-weight: 950;
+  white-space: nowrap;
 }
 
 @media (max-width: 760px) {
@@ -5210,7 +5270,10 @@ a {
     display: grid;
   }
 
-  .admin-funnel-session-card header > span,
+  .admin-funnel-session-actions {
+    justify-content: flex-start;
+  }
+
   .admin-funnel-contact a {
     justify-self: start;
   }
