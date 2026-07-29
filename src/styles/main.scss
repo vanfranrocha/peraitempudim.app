@@ -706,24 +706,24 @@ a {
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-  margin-bottom: 12px;
+  margin-bottom: 4px;
 
   span {
     color: var(--brown-dark);
     font-family: 'Fraunces', Georgia, serif;
-    font-size: 1.45rem;
+    font-size: 1.2rem;
     font-weight: 800;
   }
 
   strong {
     color: var(--caramel);
-    font-size: 1.35rem;
+    font-size: 1.3rem;
   }
 }
 
 .summary-card dl {
   display: grid;
-  gap: 10px;
+  gap: 4px;
   margin: 0;
 
   div {
@@ -3102,9 +3102,9 @@ a {
 }
 
 .summary-card__total dd {
-  color: var(--brown-dark);
-  font-size: 1.05rem;
   font-weight: 950;
+  color: var(--caramel) !important;
+  font-size: 1.3rem;
 }
 
 @media (max-width: 520px) {
@@ -4506,4 +4506,64 @@ a {
 
 .delivery-status--manual strong {
   color: var(--brown-dark);
+}
+
+
+.summary-card--compact {
+  padding-bottom: 14px;
+}
+
+.summary-card--compact .summary-card__header {
+  margin-bottom: 6px;
+}
+
+.summary-card--compact dl {
+  gap: 5px;
+}
+
+.summary-card--compact dl div {
+  align-items: flex-start;
+  padding-bottom: 3px;
+}
+
+.summary-card--compact dt {
+  max-width: 42%;
+  line-height: 1.22;
+}
+
+.summary-card--compact dd {
+  max-width: 58%;
+  line-height: 1.22;
+}
+
+.summary-card__item--compact dd {
+  font-size: 0.94rem;
+}
+
+.summary-card--compact .summary-card__total {
+  margin-top: 6px;
+  padding-top: 10px;
+}
+
+@media (max-width: 520px) {
+  .summary-card--compact {
+    padding-bottom: 12px;
+  }
+
+  .summary-card--compact .summary-card__header span {
+    font-size: 1.14rem;
+  }
+
+  .summary-card--compact .summary-card__header strong {
+    font-size: 1.16rem;
+  }
+
+  .summary-card--compact dt,
+  .summary-card--compact dd {
+    font-size: 0.92rem;
+  }
+
+  .summary-card__item--compact dd {
+    font-size: 0.9rem;
+  }
 }

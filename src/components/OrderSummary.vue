@@ -21,10 +21,9 @@ defineProps<{
 </script>
 
 <template>
-  <aside class="summary-card" aria-label="Resumo do pedido">
+  <aside class="summary-card summary-card--compact" aria-label="Resumo do pedido">
     <div class="summary-card__header">
       <span>Resumo</span>
-      <strong>{{ total }}</strong>
     </div>
 
     <dl>
@@ -32,21 +31,16 @@ defineProps<{
         <dt>Nome</dt>
         <dd>{{ customerName || 'Não informado' }}</dd>
       </div>
-      <div v-for="item in items" :key="item.id" class="summary-card__item">
+      <div v-for="item in items" :key="item.id" class="summary-card__item summary-card__item--compact">
         <dt>{{ item.name }}</dt>
         <dd>
           {{ item.details }}<br />
-          {{ item.quantity }} x {{ item.unitPrice }}<br />
-          {{ item.subtotal }}
+          {{ item.quantity }} x {{ item.unitPrice }} • {{ item.subtotal }}
         </dd>
       </div>
       <div>
         <dt>Data desejada</dt>
-        <dd>{{ date || 'Não informada' }}</dd>
-      </div>
-      <div v-if="time">
-        <dt>Horário desejado</dt>
-        <dd>{{ time }}</dd>
+        <dd>{{ date || 'Não informada' }}<template v-if="time"> - {{ time }}</template></dd>
       </div>
       <div>
         <dt>Recebimento</dt>

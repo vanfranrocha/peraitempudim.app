@@ -37,7 +37,7 @@ import {
   getOrderTotal,
 } from './services/deliveryRules'
 
-const whatsappNumber = '5563992916364'
+const whatsappNumber = '5562981628313'
 const adminCredentials = { user: 'admin', password: 'Pudim@2026!Faicalville' }
 const appConfigStorageKey = 'perai-tem-pudim-config'
 const ordersStorageKey = 'perai-tem-pudim-orders'
@@ -1890,8 +1890,8 @@ onMounted(() => {
         <section class="panel cart-panel">
           <div class="section-heading">
             <div>
-              <h2>Finalizar pedido</h2>
-              <small>confira antes de enviar</small>
+              <h2>🍮 Seu pedido está pronto!</h2>
+              <small>Falta apenas um passo para reservar seus pudins.</small>
             </div>
           </div>
 
@@ -1950,8 +1950,9 @@ onMounted(() => {
 
       <div v-if="canShowSendButton" class="mobile-checkout mobile-checkout--send">
         <button class="mobile-checkout__button" type="submit">
-          Enviar pelo WhatsApp • {{ formatCurrency(total) }}
+          Confirmar pedido • {{ formatCurrency(total) }}
         </button>
+        <small class="text-center">✅ Seu pedido já está pronto. Ao tocar em "Confirmar pedido", o WhatsApp abrirá com a mensagem preenchida.</small>
       </div>
 
       <div v-if="currentPage === 'details' && itemAdded" class="mobile-checkout">
