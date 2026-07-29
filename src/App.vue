@@ -42,7 +42,7 @@ import { supabase } from './lib/supabase'
 import { adminOrderStatusLabels, deleteOrder, fetchAdminOrders, updateOrderStatus, type AdminOrder, type AdminOrderStatus } from './services/adminOrders'
 import { createOrder, type CreateOrderResult } from './services/orders'
 import { getOrCreateCheckoutSessionId, resetCheckoutSession, trackCartStarted, trackCheckoutViewed, trackDetailsStarted } from './services/checkoutTracking'
-import { fetchCheckoutFunnelSummary, fetchRecentAbandonedCheckoutSessions, type AbandonedCheckoutSession, type CheckoutFunnelSummary, type FunnelRange } from './services/checkoutAnalytics'
+import { fetchCheckoutFunnelSummary, fetchCheckoutSessions, fetchRecentAbandonedCheckoutSessions, type AbandonedCheckoutSession, type CheckoutFunnelSummary, type CheckoutSessionListItem, type FunnelRange } from './services/checkoutAnalytics'
 import { applyProductsToConfig, fetchProducts, saveProductsToSupabase } from './services/products'
 
 const appConfigStorageKey = 'perai-tem-pudim-config'
@@ -171,7 +171,7 @@ Complemento: Qd 121 LT 27`,
 const appConfig = ref(cloneConfig())
 const adminMode = ref(false)
 const adminLoggedIn = ref(false)
-const adminPage = ref<'dashboard' | 'settings' | 'orders' | 'delivery'>('dashboard')
+const adminPage = ref<'dashboard' | 'settings' | 'orders' | 'funnel' | 'delivery'>('dashboard')
 const adminSettingsTab = ref<'availability' | 'hours' | 'products'>('availability')
 const adminSearch = ref('')
 const adminProductSizeFilter = ref<Size | 'all'>('all')
@@ -195,6 +195,7 @@ const adminOrdersError = ref('')
 const checkoutFunnelRange = ref<FunnelRange>('today')
 const checkoutFunnelSummary = ref<CheckoutFunnelSummary | null>(null)
 const abandonedCheckoutSessions = ref<AbandonedCheckoutSession[]>([])
+const checkoutSessions = ref<CheckoutSessionListItem[]>([])
 const checkoutFunnelLoading = ref(false)
 const checkoutFunnelError = ref('')
 const productsLoading = ref(false)
@@ -700,12 +701,14 @@ const adminTitle = computed(() => {
   if (adminPage.value === 'dashboard') return 'Dashboard'
   if (adminPage.value === 'orders') return 'Pedidos'
   if (adminPage.value === 'delivery') return 'Entrega'
+  if (adminPage.value === 'funnel') return 'Funil'
   return 'Configurações'
 })
 const adminSubtitle = computed(() => {
   if (adminPage.value === 'dashboard') return 'Resumo rápido da loja, produtos e campanha.'
   if (adminPage.value === 'orders') return 'Pedidos recebidos pelo app.'
   if (adminPage.value === 'delivery') return 'Controle taxa por raio e adicionais por horário.'
+  if (adminPage.value === 'funnel') return 'Acompanhe quem iniciou carrinho, avançou no checkout e deixou contato.'
   return 'Ajuste disponibilidade, horários e produtos.'
 })
 const adminOrdersTotal = computed(() => adminOrders.value.length)
@@ -823,6 +826,33 @@ function getCheckoutStepLabel(step: string) {
   if (step === 'checkout') return 'Resumo final'
   if (step === 'success') return 'Concluído'
   return step
+}
+
+function getCheckoutStatusLabel(status: string) {
+  if (status === 'cart_started') return 'Carrinho iniciado'
+  if (status === 'details_started') return 'Dados iniciados'
+  if (status === 'checkout_viewed') return 'Checkout visualizado'
+  if (status === 'completed') return 'Pedido concluído'
+  if (status === 'abandoned') return 'Abandonado'
+  return status
+}
+
+function getCheckoutSessionWhatsappUrl(session: CheckoutSessionListItem) {
+  const phone = session.customerPhone?.replace(/\D/g, '')
+  if (!phone) return ''
+  const normalized = phone.startsWith('55') ? phone : `55${phone}`
+  const name = session.customerName ? `, ${session.customerName}` : ''
+  const message = `Oi${name}! Aqui é do Peraí, tem pudim! 🍮 Vi que você começou um pedido por aqui. Posso te ajudar a finalizar?`
+  return `https://wa.me/${normalized}?text=${encodeURIComponent(message)}`
+}
+
+function getCheckoutProductLabel(productKey?: string) {
+  if (!productKey) return 'Pudim'
+  const parts = productKey.split('_')
+  const type = parts[0] === 'zero' ? 'Zero lactose' : 'Normal'
+  const flavor = productKey.includes('_cafe_') ? 'Café' : 'Tradicional'
+  const size = productKey.endsWith('180ml') ? '180 ml' : productKey.endsWith('500ml') ? '500 ml' : productKey.endsWith('1kg') ? '1 kg' : ''
+  return `Pudim ${flavor} • ${type}${size ? ` • ${size}` : ''}`
 }
 
 function getAdminDeliveryDetails(order: AdminOrder) {
@@ -1370,12 +1400,14 @@ async function loadCheckoutFunnel() {
   checkoutFunnelLoading.value = true
   checkoutFunnelError.value = ''
   try {
-    const [summary, abandoned] = await Promise.all([
+    const [summary, abandoned, sessions] = await Promise.all([
       fetchCheckoutFunnelSummary(checkoutFunnelRange.value),
       fetchRecentAbandonedCheckoutSessions(checkoutFunnelRange.value),
+      fetchCheckoutSessions(checkoutFunnelRange.value),
     ])
     checkoutFunnelSummary.value = summary
     abandonedCheckoutSessions.value = abandoned
+    checkoutSessions.value = sessions
   } catch (error) {
     checkoutFunnelError.value = error instanceof Error ? error.message : 'Não foi possível carregar o funil.'
   } finally {
@@ -1756,6 +1788,9 @@ onUnmounted(() => {
           <button type="button" :class="{ active: adminPage === 'orders' }" @click="adminPage = 'orders'">
             <span class="admin-nav-icon" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M9 6h14a2 2 0 0 1 2 2v18l-3-2-3 2-3-2-3 2-3-2-3 2V8a2 2 0 0 1 2-2Z"/><path d="M12 12h8M12 17h8M12 22h5"/></svg></span> Pedidos
           </button>
+          <button type="button" :class="{ active: adminPage === 'funnel' }" @click="adminPage = 'funnel'; loadCheckoutFunnel()">
+            <span class="admin-nav-icon" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M6 8h20M10 16h12M14 24h4"/><path d="M8 8l7 8v7l2 1 2-1v-7l7-8"/></svg></span> Funil
+          </button>
           <button type="button" :class="{ active: adminPage === 'delivery' }" @click="adminPage = 'delivery'">
             <span class="admin-nav-icon" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M7 23a4 4 0 1 0 8 0M22 23a4 4 0 1 0 8 0"/><path d="M11 23h6l4-8h4l3 8"/><path d="M17 23l-3-7H9"/><path d="M21 15l-2-4h-4"/><path d="M23 11h4"/><path d="M8 19h4"/></svg></span> Entrega
           </button>
@@ -1782,7 +1817,7 @@ onUnmounted(() => {
             <h1>{{ adminTitle }}</h1>
             <p>{{ adminSubtitle }}</p>
           </div>
-          <div v-if="adminPage !== 'orders'" class="admin-save-row">
+          <div v-if="adminPage !== 'orders' && adminPage !== 'funnel'" class="admin-save-row">
             <button class="admin-ghost-button" type="button" @click="resetAdminConfig">Restaurar</button>
             <button class="admin-primary-button" type="button" :disabled="adminSaving" @click="saveAdminConfig">{{ adminSaving ? 'Salvando...' : 'Salvar alterações' }}</button>
           </div>
@@ -2004,6 +2039,73 @@ onUnmounted(() => {
                   </article>
                 </div>
               </section>
+            </div>
+          </section>
+        </template>
+
+        <template v-else-if="adminPage === 'funnel'">
+          <section class="admin-card-panel admin-section admin-funnel-page">
+            <div class="admin-card-panel__header">
+              <div>
+                <h2>Funil de checkout</h2>
+                <p>Veja quem iniciou carrinho, avançou nas etapas e deixou contato.</p>
+              </div>
+              <div class="admin-funnel-tabs" role="group" aria-label="Período do funil">
+                <button type="button" :class="{ active: checkoutFunnelRange === 'today' }" @click="checkoutFunnelRange = 'today'">Hoje</button>
+                <button type="button" :class="{ active: checkoutFunnelRange === '7d' }" @click="checkoutFunnelRange = '7d'">7 dias</button>
+                <button type="button" :class="{ active: checkoutFunnelRange === '30d' }" @click="checkoutFunnelRange = '30d'">30 dias</button>
+                <button type="button" :disabled="checkoutFunnelLoading" @click="loadCheckoutFunnel">{{ checkoutFunnelLoading ? 'Atualizando...' : 'Atualizar' }}</button>
+              </div>
+            </div>
+
+            <p v-if="checkoutFunnelError" class="error-text">{{ checkoutFunnelError }}</p>
+
+            <div class="admin-funnel-grid" :class="{ loading: checkoutFunnelLoading }">
+              <article><span>🛒</span><strong>{{ checkoutFunnelSummary?.sessionsStarted ?? 0 }}</strong><small>Carrinhos iniciados</small></article>
+              <article><span>▣</span><strong>{{ checkoutFunnelSummary?.detailsStarted ?? 0 }}</strong><small>Chegaram aos dados</small></article>
+              <article><span>✓</span><strong>{{ checkoutFunnelSummary?.completed ?? 0 }}</strong><small>Pedidos concluídos</small></article>
+              <article><span>!</span><strong>{{ checkoutFunnelSummary?.abandoned ?? 0 }}</strong><small>Abandonados 2h+</small></article>
+            </div>
+
+            <div v-if="!checkoutSessions.length && !checkoutFunnelLoading" class="admin-empty-orders">
+              <strong>Nenhuma sessão no período.</strong>
+              <span>Quando alguém iniciar um carrinho, aparece aqui.</span>
+            </div>
+
+            <div v-else class="admin-funnel-session-list">
+              <article v-for="session in checkoutSessions" :key="session.sessionId" class="admin-funnel-session-card" :class="{ abandoned: session.isAbandoned, completed: session.status === 'completed' }">
+                <header>
+                  <div>
+                    <strong>{{ getCheckoutStatusLabel(session.status) }}</strong>
+                    <small>{{ getCheckoutStepLabel(session.currentStep) }} • {{ new Date(session.lastActivityAt).toLocaleString('pt-BR') }}</small>
+                  </div>
+                  <span v-if="session.isAbandoned">Abandonado</span>
+                  <span v-else-if="session.status === 'completed'">Concluído</span>
+                  <span v-else>Em andamento</span>
+                </header>
+
+                <div class="admin-funnel-session-meta">
+                  <div><small>Itens</small><strong>{{ session.itemsQuantity }}</strong></div>
+                  <div><small>Subtotal</small><strong>{{ formatCurrency(session.cartSubtotal) }}</strong></div>
+                  <div><small>Pedido</small><strong>{{ session.orderMode === 'scheduled' ? 'Encomenda' : session.orderMode === 'ready' ? 'Pronta entrega' : '-' }}</strong></div>
+                  <div><small>Recebimento</small><strong>{{ session.fulfillmentType === 'delivery' ? 'Entrega' : session.fulfillmentType === 'pickup' ? 'Retirada' : '-' }}</strong></div>
+                </div>
+
+                <div class="admin-funnel-contact">
+                  <div>
+                    <small>Contato</small>
+                    <strong>{{ session.customerName || 'Nome não informado' }}</strong>
+                    <span>{{ session.customerPhone ? formatBrazilianPhone(session.customerPhone) : 'Telefone não informado' }}</span>
+                  </div>
+                  <a v-if="getCheckoutSessionWhatsappUrl(session)" :href="getCheckoutSessionWhatsappUrl(session)" target="_blank" rel="noopener noreferrer">Chamar no WhatsApp</a>
+                </div>
+
+                <div v-if="session.cartItems.length" class="admin-funnel-products">
+                  <div v-for="(item, index) in session.cartItems" :key="`${session.sessionId}-${index}`">
+                    <span>{{ item.quantity || 0 }}x {{ getCheckoutProductLabel(item.product_key) }}</span>
+                  </div>
+                </div>
+              </article>
             </div>
           </section>
         </template>
@@ -2500,8 +2602,8 @@ onUnmounted(() => {
                 <small v-if="deliveryStatus !== 'available' && deliveryMessage">{{ deliveryMessage }}</small>
               </div>
               <div v-if="!isDeliveryCalculationEnabled" class="delivery-status delivery-status--manual">
-                <strong>Taxa de entrega: A confirmar</strong>
-                <span>Vamos confirmar o valor da entrega antes de finalizar.</span>
+                <strong>Entrega: A confirmar</strong>
+                <!-- <span>Vamos a entrega antes de finalizar.</span> -->
               </div>
               <label class="field field--wide">
                 <span>Complemento (opcional)</span>
@@ -2511,7 +2613,7 @@ onUnmounted(() => {
                 <span>Ponto de referência (opcional)</span>
                 <input v-model="reference" type="text" placeholder="Próximo a..." />
               </label>
-              <p v-if="triedSubmit && deliveryMode === 'entrega' && !deliveryAddressComplete" class="error-text">
+              <p v-if="triedSubmit && deliveryMode === 'entrega' && !deliveryAddressComplete && isDeliveryCalculationEnabled && (deliveryMessage || deliveryFee !== null)" class="error-text">
                 Informe CEP, endereço, número, bairro, cidade e UF para calcular a entrega.
               </p>
               <p v-if="triedSubmit && deliveryMode === 'entrega' && deliveryAddressComplete && !canUseDeliveryCalculation" class="error-text">

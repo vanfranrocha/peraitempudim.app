@@ -5091,3 +5091,137 @@ a {
 .admin-forgot-password:disabled {
   opacity: 0.6;
 }
+
+.admin-funnel-page {
+  align-self: start;
+}
+
+.admin-funnel-session-list {
+  display: grid;
+  gap: 12px;
+}
+
+.admin-funnel-session-card {
+  display: grid;
+  gap: 12px;
+  border: 1px solid rgba(122, 43, 22, 0.1);
+  border-left: 4px solid var(--caramel-dark);
+  border-radius: 18px;
+  padding: 14px;
+  background: #fffaf4;
+}
+
+.admin-funnel-session-card.completed {
+  border-left-color: #40763e;
+}
+
+.admin-funnel-session-card.abandoned {
+  border-left-color: #8c2f1e;
+}
+
+.admin-funnel-session-card header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.admin-funnel-session-card header strong,
+.admin-funnel-contact strong {
+  display: block;
+  color: var(--brown-dark);
+  font-weight: 950;
+}
+
+.admin-funnel-session-card header small,
+.admin-funnel-contact small,
+.admin-funnel-contact span,
+.admin-funnel-session-meta small {
+  color: rgba(53, 23, 15, 0.58);
+  font-weight: 800;
+}
+
+.admin-funnel-session-card header > span {
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: #fff0df;
+  color: var(--brown-coffee);
+  font-size: 0.82rem;
+  font-weight: 950;
+  white-space: nowrap;
+}
+
+.admin-funnel-session-meta {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.admin-funnel-session-meta div {
+  display: grid;
+  gap: 3px;
+  border-radius: 14px;
+  padding: 10px;
+  background: var(--white);
+}
+
+.admin-funnel-session-meta strong {
+  overflow-wrap: anywhere;
+  color: var(--brown-dark);
+  font-weight: 950;
+}
+
+.admin-funnel-contact {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-radius: 14px;
+  padding: 12px;
+  background: var(--white);
+}
+
+.admin-funnel-contact a {
+  border-radius: 999px;
+  padding: 10px 12px;
+  background: #25d366;
+  color: white;
+  font-weight: 950;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.admin-funnel-products {
+  display: grid;
+  gap: 6px;
+}
+
+.admin-funnel-products div {
+  border-radius: 12px;
+  padding: 9px 10px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--brown-dark);
+  font-weight: 850;
+}
+
+@media (max-width: 760px) {
+  .admin-funnel-session-card header,
+  .admin-funnel-contact {
+    display: grid;
+  }
+
+  .admin-funnel-session-card header > span,
+  .admin-funnel-contact a {
+    justify-self: start;
+  }
+
+  .admin-funnel-session-meta {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 460px) {
+  .admin-funnel-session-meta {
+    grid-template-columns: 1fr;
+  }
+}

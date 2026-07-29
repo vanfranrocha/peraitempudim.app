@@ -13,6 +13,31 @@ export type CheckoutFunnelSummary = {
   estimatedAbandonedCartValue: number
 }
 
+
+
+export type CheckoutSessionListItem = {
+  sessionId: string
+  status: string
+  currentStep: string
+  lastActivityAt: string
+  startedAt: string
+  checkoutViewedAt: string | null
+  completedAt: string | null
+  orderId: string | null
+  itemsQuantity: number
+  cartSubtotal: number
+  orderMode: string | null
+  fulfillmentType: string | null
+  customerName: string | null
+  customerPhone: string | null
+  cartItems: Array<{
+    product_id?: string
+    product_key?: string
+    quantity?: number
+  }>
+  isAbandoned: boolean
+}
+
 export type AbandonedCheckoutSession = {
   sessionId: string
   status: string
@@ -64,4 +89,29 @@ export async function fetchRecentAbandonedCheckoutSessions(range: FunnelRange) {
     customerName: row.customer_name ?? null,
     customerPhone: row.customer_phone ?? null,
   })) satisfies AbandonedCheckoutSession[]
+}
+
+
+export async function fetchCheckoutSessions(range: FunnelRange) {
+  const { start, end } = getRangeDates(range)
+  const { data, error } = await supabase.rpc('get_checkout_sessions', { start_date: start, end_date: end })
+  if (error) throw new Error(`Falha ao carregar sessões do funil: ${error.message}`)
+  return (data ?? []).map((row: any) => ({
+    sessionId: String(row.session_id),
+    status: String(row.status),
+    currentStep: String(row.current_step),
+    lastActivityAt: String(row.last_activity_at),
+    startedAt: String(row.started_at),
+    checkoutViewedAt: row.checkout_viewed_at ? String(row.checkout_viewed_at) : null,
+    completedAt: row.completed_at ? String(row.completed_at) : null,
+    orderId: row.order_id ? String(row.order_id) : null,
+    itemsQuantity: Number(row.items_quantity),
+    cartSubtotal: Number(row.cart_subtotal),
+    orderMode: row.order_mode ?? null,
+    fulfillmentType: row.fulfillment_type ?? null,
+    customerName: row.customer_name ?? null,
+    customerPhone: row.customer_phone ?? null,
+    cartItems: Array.isArray(row.cart_items) ? row.cart_items : [],
+    isAbandoned: Boolean(row.is_abandoned),
+  })) satisfies CheckoutSessionListItem[]
 }
