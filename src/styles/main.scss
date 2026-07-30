@@ -5390,3 +5390,390 @@ a {
     min-width: 0;
   }
 }
+
+/* Admin visual refresh inspired by clean grocery dashboards. */
+:root {
+  --admin-green: #3A180C;
+  --admin-green-dark: #043b2b;
+  --admin-orange: #f5821f;
+  --admin-bg: #f2f6f4;
+  --admin-card: #ffffff;
+  --admin-line: rgba(14, 77, 56, 0.08);
+  --admin-muted: #6f7f78;
+  --admin-text: #17382d;
+}
+
+.admin-shell:has(.admin-dashboard-shell) {
+  background:
+    radial-gradient(circle at 8% 0%, rgba(146, 183, 171, 0.28), transparent 30%),
+    radial-gradient(circle at 90% 4%, rgba(225, 239, 234, 0.9), transparent 36%),
+    var(--admin-bg) !important;
+}
+
+.admin-dashboard-shell {
+  background: rgba(248, 251, 249, 0.92) !important;
+  border: 0 !important;
+}
+
+.admin-sidebar {
+  border-right: 1px solid var(--admin-line) !important;
+  background: rgba(255, 255, 255, 0.94) !important;
+  box-shadow: 18px 0 45px rgba(6, 77, 56, 0.05) !important;
+}
+
+.admin-sidebar__brand {
+  color: var(--admin-text) !important;
+}
+
+.admin-sidebar__brand img {
+  border-radius: 18px;
+  background: #fff6ed;
+  box-shadow: 0 12px 26px rgba(245, 130, 31, 0.12);
+}
+
+.admin-sidebar__brand span {
+  color: var(--admin-text) !important;
+  font-family: inherit !important;
+  font-weight: 900 !important;
+  letter-spacing: -0.01em;
+}
+
+.admin-sidebar__nav {
+  gap: 7px !important;
+}
+
+.admin-sidebar__nav button {
+  min-height: 46px !important;
+  border: 1px solid transparent !important;
+  border-radius: 13px !important;
+  background: transparent !important;
+  color: #425851 !important;
+  font-weight: 780 !important;
+  transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+
+.admin-sidebar__nav button:hover {
+  background: #f3f8f5 !important;
+  color: var(--admin-green) !important;
+}
+
+.admin-sidebar__nav button.active {
+  border-color: rgba(245, 130, 31, 0.14) !important;
+  background: #fff4e8 !important;
+  color: var(--admin-green) !important;
+  box-shadow: inset 3px 0 0 var(--admin-orange) !important;
+}
+
+.admin-nav-icon {
+  background: transparent !important;
+  color: currentColor !important;
+}
+
+.admin-sidebar__nav button.active .admin-nav-icon {
+  background: rgba(245, 130, 31, 0.12) !important;
+  color: var(--admin-orange) !important;
+}
+
+.admin-sidebar__footer {
+  border: 1px solid rgba(245, 130, 31, 0.11) !important;
+  border-radius: 18px !important;
+  background: linear-gradient(180deg, #fff7ef, #ffffff) !important;
+  box-shadow: 0 14px 32px rgba(6, 77, 56, 0.06) !important;
+}
+
+.admin-main {
+  background: transparent !important;
+}
+
+.admin-main-header {
+  margin: 18px 32px 0 !important;
+  min-height: 72px !important;
+  padding: 14px 18px !important;
+  border: 0 !important;
+  border-radius: 18px !important;
+  background: var(--admin-green) !important;
+  box-shadow: 0 18px 38px rgba(6, 77, 56, 0.16) !important;
+}
+
+.admin-content-scroll {
+  padding-top: 24px !important;
+}
+
+.admin-search {
+  height: 46px !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: rgba(255, 255, 255, 0.94) !important;
+  box-shadow: inset 0 0 0 1px rgba(6, 77, 56, 0.08) !important;
+}
+
+.admin-search input,
+.admin-search input::placeholder {
+  color: #6f7f78 !important;
+}
+
+.admin-search button {
+  color: var(--admin-green) !important;
+}
+
+.admin-title-row h1,
+.admin-title-row h2,
+.admin-card-panel h2,
+.admin-current-config h2 {
+  color: var(--admin-text) !important;
+  font-family: inherit !important;
+  font-weight: 900 !important;
+  letter-spacing: -0.02em;
+}
+
+.admin-title-row p,
+.admin-card-panel p,
+.admin-card-panel small,
+.admin-current-list span {
+  color: var(--admin-muted) !important;
+}
+
+.admin-metric-card,
+.admin-card-panel,
+.admin-chart-card,
+.admin-product-card,
+.admin-dashboard-product,
+.admin-current-config,
+.admin-funnel-session-card,
+.admin-kanban-column,
+.admin-kanban-card {
+  border: 1px solid var(--admin-line) !important;
+  border-radius: 20px !important;
+  background: var(--admin-card) !important;
+  box-shadow: 0 16px 34px rgba(21, 54, 43, 0.06) !important;
+}
+
+.admin-metric-card {
+  padding: 20px !important;
+}
+
+.admin-metric-card>span,
+.admin-chart-icon,
+.admin-mini-hours span,
+.admin-funnel-grid article span {
+  background: #fff2e4 !important;
+  color: var(--admin-orange) !important;
+}
+
+.admin-metric-card strong,
+.admin-status-list strong,
+.admin-mini-hours strong,
+.admin-dashboard-product strong,
+.admin-funnel-session-meta strong,
+.admin-funnel-session-card header strong,
+.admin-kanban-card strong {
+  color: var(--admin-text) !important;
+}
+
+.admin-status-list div,
+.admin-current-list div,
+.admin-dashboard-product,
+.admin-funnel-session-meta div,
+.admin-funnel-contact,
+.admin-funnel-products div,
+.admin-product-toolbar {
+  background: #f8fbf9 !important;
+}
+
+.admin-primary-button,
+.admin-save-row .admin-primary-button,
+.admin-kanban-next,
+.admin-funnel-tabs button.active,
+.admin-tabs button.active {
+  background: var(--admin-orange) !important;
+  color: #ffffff !important;
+  box-shadow: 0 14px 28px rgba(245, 130, 31, 0.22) !important;
+}
+
+.admin-ghost-button,
+.admin-save-row button:not(.admin-primary-button),
+.admin-tabs,
+.admin-funnel-tabs button,
+.admin-filter-pills button {
+  border-color: var(--admin-line) !important;
+  background: #ffffff !important;
+  color: var(--admin-text) !important;
+}
+
+.admin-tabs,
+.admin-funnel-tabs {
+  background: #ffffff !important;
+  box-shadow: 0 10px 24px rgba(21, 54, 43, 0.04) !important;
+}
+
+.admin-status-list div,
+.admin-current-list div {
+  border-radius: 13px !important;
+}
+
+.admin-dashboard-product>span,
+.admin-current-config__header span,
+.admin-funnel-session-card.completed .admin-funnel-session-actions>span {
+  background: rgba(6, 77, 56, 0.09) !important;
+  color: var(--admin-green) !important;
+}
+
+.admin-dashboard-product>span.off,
+.admin-funnel-session-card.abandoned .admin-funnel-session-actions>span {
+  background: rgba(245, 130, 31, 0.12) !important;
+  color: #b85f0f !important;
+}
+
+.admin-product-card::before {
+  background: linear-gradient(90deg, rgba(6, 77, 56, 0.08), rgba(245, 130, 31, 0.08)) !important;
+}
+
+.admin-funnel-contact a {
+  background: #25d366 !important;
+  box-shadow: 0 10px 20px rgba(37, 211, 102, 0.16);
+}
+
+@media (max-width: 760px) {
+  .admin-main-header {
+    margin: 10px 12px 0 !important;
+    border-radius: 16px !important;
+  }
+
+  .admin-content-scroll {
+    padding-top: 18px !important;
+  }
+}
+.admin-funnel-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--admin-line);
+  border-radius: 18px;
+  padding: 10px;
+  background: #ffffff;
+}
+
+.admin-funnel-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.admin-funnel-filter button,
+.admin-funnel-density {
+  min-height: 36px;
+  border: 1px solid var(--admin-line);
+  border-radius: 999px;
+  padding: 0 13px;
+  background: #f8fbf9;
+  color: var(--admin-text);
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.admin-funnel-filter button.active {
+  border-color: rgba(245, 130, 31, 0.24);
+  background: var(--admin-orange);
+  color: #ffffff;
+  box-shadow: 0 10px 20px rgba(245, 130, 31, 0.16);
+}
+
+.admin-funnel-density {
+  background: var(--admin-green) !important;
+  color: #ffffff !important;
+  white-space: nowrap;
+}
+
+.admin-funnel-session-list--compact {
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  align-items: start;
+}
+
+.admin-funnel-session-list--compact .admin-funnel-session-card {
+  gap: 8px;
+  border-left-width: 3px;
+  border-radius: 16px !important;
+  padding: 11px !important;
+}
+
+.admin-funnel-session-list--compact .admin-funnel-session-card header {
+  align-items: center;
+}
+
+.admin-funnel-session-list--compact .admin-funnel-session-card header strong {
+  font-size: 0.98rem;
+}
+
+.admin-funnel-session-list--compact .admin-funnel-session-card header small,
+.admin-funnel-session-list--compact .admin-funnel-contact small,
+.admin-funnel-session-list--compact .admin-funnel-contact span,
+.admin-funnel-session-list--compact .admin-funnel-session-meta small {
+  font-size: 0.74rem;
+}
+
+.admin-funnel-session-list--compact .admin-funnel-session-actions > span {
+  padding: 4px 8px;
+  font-size: 0.72rem;
+}
+
+.admin-funnel-session-list--compact .admin-funnel-remove {
+  width: 32px;
+  height: 32px;
+}
+
+.admin-funnel-session-list--compact .admin-funnel-session-meta {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.admin-funnel-session-list--compact .admin-funnel-session-meta div,
+.admin-funnel-session-list--compact .admin-funnel-contact,
+.admin-funnel-session-list--compact .admin-funnel-products div {
+  border-radius: 11px;
+  padding: 8px;
+}
+
+.admin-funnel-session-list--compact .admin-funnel-session-meta strong {
+  font-size: 0.86rem;
+}
+
+.admin-funnel-session-list--compact .admin-funnel-contact {
+  display: grid;
+  gap: 8px;
+}
+
+.admin-funnel-session-list--compact .admin-funnel-contact a {
+  justify-self: start;
+  padding: 8px 10px;
+  font-size: 0.78rem;
+}
+
+.admin-funnel-session-list--compact .admin-funnel-products {
+  gap: 4px;
+}
+
+.admin-funnel-session-list--compact .admin-funnel-products div {
+  font-size: 0.82rem;
+}
+
+@media (max-width: 860px) {
+  .admin-funnel-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .admin-funnel-density {
+    width: 100%;
+  }
+
+  .admin-funnel-session-list--compact {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 460px) {
+  .admin-funnel-session-list--compact .admin-funnel-session-meta {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

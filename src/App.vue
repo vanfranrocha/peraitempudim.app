@@ -196,9 +196,20 @@ const checkoutFunnelRange = ref<FunnelRange>('today')
 const checkoutFunnelSummary = ref<CheckoutFunnelSummary | null>(null)
 const abandonedCheckoutSessions = ref<AbandonedCheckoutSession[]>([])
 const checkoutSessions = ref<CheckoutSessionListItem[]>([])
+const checkoutFunnelFilter = ref<'all' | 'with_contact' | 'without_contact' | 'abandoned' | 'completed'>('all')
+const checkoutFunnelDensity = ref<'comfortable' | 'compact'>('compact')
 const checkoutFunnelLoading = ref(false)
 const checkoutFunnelError = ref('')
 const removingCheckoutSessionId = ref<string | null>(null)
+const hasCheckoutContact = (session: CheckoutSessionListItem) => Boolean(session.customerName || session.customerPhone)
+const checkoutSessionsWithContactCount = computed(() => checkoutSessions.value.filter(hasCheckoutContact).length)
+const filteredCheckoutSessions = computed(() => checkoutSessions.value.filter((session) => {
+  if (checkoutFunnelFilter.value === 'with_contact') return hasCheckoutContact(session)
+  if (checkoutFunnelFilter.value === 'without_contact') return !hasCheckoutContact(session)
+  if (checkoutFunnelFilter.value === 'abandoned') return session.isAbandoned
+  if (checkoutFunnelFilter.value === 'completed') return session.status === 'completed'
+  return true
+}))
 const productsLoading = ref(false)
 const productsLoadError = ref('')
 const adminSaving = ref(false)
@@ -2156,7 +2167,7 @@ onUnmounted(() => {
             <div class="admin-card-panel__header">
               <div>
                 <h2>Funil de checkout</h2>
-                <p>Veja quem iniciou carrinho, avançou nas etapas e deixou contato.</p>
+                <p>Veja quem iniciou carrinho, entrou nos dados e quem deixou contato para recuperação.</p>
               </div>
               <div class="admin-funnel-tabs" role="group" aria-label="Período do funil">
                 <button type="button" :class="{ active: checkoutFunnelRange === 'today' }" @click="checkoutFunnelRange = 'today'">Hoje</button>
@@ -2170,18 +2181,32 @@ onUnmounted(() => {
 
             <div class="admin-funnel-grid" :class="{ loading: checkoutFunnelLoading }">
               <article><span>🛒</span><strong>{{ checkoutFunnelSummary?.sessionsStarted ?? 0 }}</strong><small>Carrinhos iniciados</small></article>
-              <article><span>▣</span><strong>{{ checkoutFunnelSummary?.detailsStarted ?? 0 }}</strong><small>Chegaram aos dados</small></article>
+              <article><span>▣</span><strong>{{ checkoutFunnelSummary?.detailsStarted ?? 0 }}</strong><small>Entraram nos dados</small></article>
+              <article><span>☎</span><strong>{{ checkoutSessionsWithContactCount }}</strong><small>Deixaram contato</small></article>
               <article><span>✓</span><strong>{{ checkoutFunnelSummary?.completed ?? 0 }}</strong><small>Pedidos concluídos</small></article>
               <article><span>!</span><strong>{{ checkoutFunnelSummary?.abandoned ?? 0 }}</strong><small>Abandonados 2h+</small></article>
             </div>
 
-            <div v-if="!checkoutSessions.length && !checkoutFunnelLoading" class="admin-empty-orders">
-              <strong>Nenhuma sessão no período.</strong>
-              <span>Quando alguém iniciar um carrinho, aparece aqui.</span>
+            <div class="admin-funnel-controls">
+              <div class="admin-funnel-filter" role="group" aria-label="Filtrar sessões do funil">
+                <button type="button" :class="{ active: checkoutFunnelFilter === 'all' }" @click="checkoutFunnelFilter = 'all'">Todos</button>
+                <button type="button" :class="{ active: checkoutFunnelFilter === 'with_contact' }" @click="checkoutFunnelFilter = 'with_contact'">Com contato</button>
+                <button type="button" :class="{ active: checkoutFunnelFilter === 'without_contact' }" @click="checkoutFunnelFilter = 'without_contact'">Sem contato</button>
+                <button type="button" :class="{ active: checkoutFunnelFilter === 'abandoned' }" @click="checkoutFunnelFilter = 'abandoned'">Abandonados</button>
+                <button type="button" :class="{ active: checkoutFunnelFilter === 'completed' }" @click="checkoutFunnelFilter = 'completed'">Concluídos</button>
+              </div>
+              <button class="admin-funnel-density" type="button" @click="checkoutFunnelDensity = checkoutFunnelDensity === 'compact' ? 'comfortable' : 'compact'">
+                {{ checkoutFunnelDensity === 'compact' ? 'Ver maior' : 'Ver compacto' }}
+              </button>
             </div>
 
-            <div v-else class="admin-funnel-session-list">
-              <article v-for="session in checkoutSessions" :key="session.sessionId" class="admin-funnel-session-card" :class="{ abandoned: session.isAbandoned, completed: session.status === 'completed' }">
+            <div v-if="!filteredCheckoutSessions.length && !checkoutFunnelLoading" class="admin-empty-orders">
+              <strong>Nenhuma sessão no período.</strong>
+              <span>Quando alguém aparecer nesse filtro, o card entra aqui.</span>
+            </div>
+
+            <div v-else class="admin-funnel-session-list" :class="{ 'admin-funnel-session-list--compact': checkoutFunnelDensity === 'compact' }">
+              <article v-for="session in filteredCheckoutSessions" :key="session.sessionId" class="admin-funnel-session-card" :class="{ abandoned: session.isAbandoned, completed: session.status === 'completed' }">
                 <header>
                   <div>
                     <strong>{{ getCheckoutStatusLabel(session.status) }}</strong>
