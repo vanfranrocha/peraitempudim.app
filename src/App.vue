@@ -374,6 +374,30 @@ const areCustomerDetailsComplete = computed(() => {
   return isDateValid.value && nameComplete && phoneComplete && deliveryAddressComplete.value && canUseDeliveryCalculation.value
 })
 const areCustomerDetailsValid = computed(() => areCustomerDetailsComplete.value && !customerNameError.value && !customerPhoneError.value)
+const cepFieldError = computed(() => triedSubmit.value && deliveryMode.value === 'entrega' && normalizeCep(cep.value).length !== 8)
+const addressFieldError = computed(() => triedSubmit.value && deliveryMode.value === 'entrega' && !address.value.trim())
+const numberFieldError = computed(() => triedSubmit.value && deliveryMode.value === 'entrega' && !number.value.trim())
+const neighborhoodFieldError = computed(() => triedSubmit.value && deliveryMode.value === 'entrega' && !neighborhood.value.trim())
+const deliveryAddressError = computed(() => {
+  if (!triedSubmit.value || deliveryMode.value !== 'entrega') return ''
+  if (cepFieldError.value) return 'Informe um CEP válido.'
+  if (addressFieldError.value) return 'Informe o endereço.'
+  if (numberFieldError.value) return 'Informe o número do endereço.'
+  if (neighborhoodFieldError.value) return 'Informe o bairro.'
+  return ''
+})
+const detailsValidationMessage = computed(() => {
+  if (!triedSubmit.value || areCustomerDetailsValid.value) return ''
+  const currentDateError = getDateError()
+  if (currentDateError) return currentDateError
+  if (customerName.value.trim().length < 2) return customerName.value.trim() ? 'Informe um nome válido.' : 'Informe seu nome.'
+  if (!normalizedCustomerPhone.value) return 'Informe um telefone válido com DDD.'
+  if (deliveryMode.value === 'entrega') {
+    if (deliveryAddressError.value) return deliveryAddressError.value
+    if (!canUseDeliveryCalculation.value) return 'Aguarde o cálculo da entrega para continuar.'
+  }
+  return 'Confira os dados antes de continuar.'
+})
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)
@@ -857,8 +881,37 @@ function getCheckoutStatusLabel(status: string) {
 function getCheckoutSessionWhatsappUrl(session: CheckoutSessionListItem) {
   const normalized = session.customerPhone ? toWhatsAppPhone(session.customerPhone) : ''
   if (!normalized) return ''
-  const name = session.customerName ? `, ${session.customerName}` : ''
-  const message = `Oi${name}! Aqui é do Peraí, tem pudim! 🍮 Vi que você começou um pedido por aqui. Posso te ajudar a finalizar?`
+  const name = session.customerName?.trim()
+  const greeting = name ? `Oi, ${name}!` : 'Oi!'
+  const items = session.cartItems.length
+    ? session.cartItems.map((item) => {
+      const label = getCheckoutProductLabel(item.product_key)
+      const promo = isCheckoutItemPromotional(item) ? ' (promoção)' : ''
+      return `- ${item.quantity || 1}x ${label}${promo}`
+    }).join('\n')
+    : '- Pudins selecionados no carrinho'
+  const orderModeLabel = session.orderMode === 'scheduled'
+    ? 'Encomenda'
+    : session.orderMode === 'ready'
+      ? 'Pronta entrega'
+      : 'Pedido'
+  const fulfillmentLabel = session.fulfillmentType === 'delivery'
+    ? 'Entrega'
+    : session.fulfillmentType === 'pickup'
+      ? 'Retirada'
+      : 'Recebimento a definir'
+  const message = [
+    `${greeting} Aqui é do Peraí, tem pudim! 🍮`,
+    '',
+    'Vi que você começou este pedido por aqui:',
+    items,
+    '',
+    `Tipo de pedido: ${orderModeLabel}`,
+    `Forma de recebimento: ${fulfillmentLabel}`,
+    `Subtotal dos produtos: ${formatCurrency(session.cartSubtotal)}`,
+    '',
+    'Posso te ajudar a finalizar ou tirar alguma dúvida?',
+  ].join('\n')
   return `https://wa.me/${normalized}?text=${encodeURIComponent(message)}`
 }
 
@@ -1335,6 +1388,32 @@ function confirmDetails() {
   if (!areCustomerDetailsValid.value) return
   void trackDetailsStarted(buildCheckoutTrackingPayload(true, 'details_completed'))
   openCheckoutPage()
+}
+
+function focusFirstInvalidDetailsField() {
+  const selector = [
+    !isDateValid.value && '[data-details-field="date"]',
+    customerName.value.trim().length < 2 && '[data-details-field="name"]',
+    !normalizedCustomerPhone.value && '[data-details-field="phone"]',
+    deliveryMode.value === 'entrega' && normalizeCep(cep.value).length !== 8 && '[data-details-field="cep"]',
+    deliveryMode.value === 'entrega' && !address.value.trim() && '[data-details-field="address"]',
+    deliveryMode.value === 'entrega' && !number.value.trim() && '[data-details-field="number"]',
+    deliveryMode.value === 'entrega' && !neighborhood.value.trim() && '[data-details-field="neighborhood"]',
+  ].find(Boolean)
+
+  if (!selector) return
+  const element = document.querySelector<HTMLInputElement | HTMLSelectElement>(selector)
+  element?.focus()
+  element?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+}
+
+function attemptConfirmDetails() {
+  triedSubmit.value = true
+  if (!areCustomerDetailsValid.value) {
+    requestAnimationFrame(focusFirstInvalidDetailsField)
+    return
+  }
+  confirmDetails()
 }
 
 
@@ -2614,6 +2693,7 @@ onUnmounted(() => {
                 <input
                   v-model="desiredDate"
                   type="date"
+                  data-details-field="date"
                   required
                   :min="todayIso"
                   :max="maxDateIso"
@@ -2646,12 +2726,14 @@ onUnmounted(() => {
                 <input
                   v-model="cep"
                   type="text"
+                  data-details-field="cep"
                   inputmode="numeric"
                   autocomplete="postal-code"
                   placeholder="00000-000"
                   maxlength="9"
                   @input="cep = formatCep(cep)"
                   @blur="fillAddressByCep"
+                  :aria-invalid="cepFieldError"
                 />
               </label>
 
@@ -2694,6 +2776,7 @@ onUnmounted(() => {
               <input
                 v-model.trim="customerName"
                 type="text"
+                data-details-field="name"
                 required
                 autocomplete="name"
                 placeholder="Seu nome"
@@ -2708,6 +2791,7 @@ onUnmounted(() => {
               <input
                 v-model="customerPhone"
                 type="tel"
+                data-details-field="phone"
                 required
                 inputmode="tel"
                 autocomplete="tel"
@@ -2725,20 +2809,18 @@ onUnmounted(() => {
               <div class="delivery-city-row">
                 <label class="field field--auto-filled">
                   <span>Endereço</span>
-                  <input v-model="address" type="text" autocomplete="street-address" placeholder="Rua, avenida ou alameda" />
+                  <input v-model="address" type="text" data-details-field="address" autocomplete="street-address" placeholder="Rua, avenida ou alameda" :aria-invalid="addressFieldError" />
                 </label>
                 <label class="field">
                   <span>Número</span>
-                  <input v-model="number" type="text" inputmode="numeric" autocomplete="address-line2" placeholder="Nº" />
+                  <input v-model="number" type="text" data-details-field="number" inputmode="numeric" autocomplete="address-line2" placeholder="Nº" :aria-invalid="numberFieldError" />
                 </label>
               </div>
               <label class="field field--auto-filled">
                 <span>Bairro</span>
-                <input v-model="neighborhood" type="text" autocomplete="address-level2" placeholder="Bairro" />
+                <input v-model="neighborhood" type="text" data-details-field="neighborhood" autocomplete="address-level2" placeholder="Bairro" :aria-invalid="neighborhoodFieldError" />
               </label>
-              <p v-if="triedSubmit && !deliveryAddressComplete" class="error-text">
-                Informe CEP, endereço, número e bairro para continuar.
-              </p>
+              <p v-if="deliveryAddressError" class="error-text">{{ deliveryAddressError }}</p>
               <p v-if="triedSubmit && deliveryAddressComplete && !canUseDeliveryCalculation" class="error-text">
                 Calcule a entrega antes de continuar.
               </p>
@@ -2909,9 +2991,10 @@ onUnmounted(() => {
           <small>{{ detailsFooterTotalLabel }}</small>
           <strong>{{ formatCurrency(total) }}</strong>
         </div>
-        <button class="mobile-checkout__button" type="button" :disabled="!areCustomerDetailsComplete" @click="confirmDetails">
+        <button class="mobile-checkout__button" type="button" @click="attemptConfirmDetails">
           Continuar
         </button>
+        <small v-if="detailsValidationMessage" class="minimum-inline-error">{{ detailsValidationMessage }}</small>
       </div>
     </form>
   </main>
