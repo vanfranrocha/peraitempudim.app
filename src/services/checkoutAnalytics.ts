@@ -30,6 +30,7 @@ export type CheckoutSessionListItem = {
   fulfillmentType: string | null
   customerName: string | null
   customerPhone: string | null
+  lastCompletedField: string | null
   cartItems: Array<{
     product_id?: string
     product_key?: string
@@ -112,6 +113,7 @@ export async function fetchCheckoutSessions(range: FunnelRange) {
     fulfillmentType: row.fulfillment_type ?? null,
     customerName: row.customer_name ?? null,
     customerPhone: row.customer_phone ?? null,
+    lastCompletedField: row.last_completed_field ?? null,
     cartItems: Array.isArray(row.cart_items) ? row.cart_items : [],
     isAbandoned: Boolean(row.is_abandoned),
   })) satisfies CheckoutSessionListItem[]

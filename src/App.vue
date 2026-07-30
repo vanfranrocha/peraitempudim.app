@@ -41,7 +41,7 @@ import type { Session } from '@supabase/supabase-js'
 import { supabase } from './lib/supabase'
 import { adminOrderStatusLabels, deleteOrder, fetchAdminOrders, updateOrderStatus, type AdminOrder, type AdminOrderStatus } from './services/adminOrders'
 import { createOrder, type CreateOrderResult } from './services/orders'
-import { getOrCreateCheckoutSessionId, resetCheckoutSession, trackCartStarted, trackCheckoutViewed, trackDetailsStarted } from './services/checkoutTracking'
+import { getOrCreateCheckoutSessionId, resetCheckoutSession, trackCartStarted, trackCheckoutViewed, trackDetailsStarted, type CheckoutLastCompletedField } from './services/checkoutTracking'
 import { deleteCheckoutSession, fetchCheckoutFunnelSummary, fetchCheckoutSessions, fetchRecentAbandonedCheckoutSessions, type AbandonedCheckoutSession, type CheckoutFunnelSummary, type CheckoutSessionListItem, type FunnelRange } from './services/checkoutAnalytics'
 import { applyProductsToConfig, fetchProducts, saveProductsToSupabase } from './services/products'
 
@@ -222,6 +222,8 @@ const state = ref('GO')
 const complement = ref('')
 const reference = ref('')
 const notes = ref('')
+const optionalAddressOpen = ref(false)
+const manualAddressMode = ref(false)
 const deliveryStatus = ref<DeliveryCalculationStatus>('idle')
 const deliveryMessage = ref('')
 const deliveryDistanceKm = ref<number | null>(null)
@@ -355,7 +357,12 @@ const deliveryAddressComplete = computed(() =>
 const canUseDeliveryCalculation = computed(() =>
   deliveryMode.value !== 'entrega' || !isDeliveryCalculationEnabled.value || deliveryStatus.value === 'available' || deliveryStatus.value === 'outside-area',
 )
-const areCustomerDetailsValid = computed(() => isDateValid.value && !customerNameError.value && !customerPhoneError.value && deliveryAddressComplete.value && canUseDeliveryCalculation.value)
+const areCustomerDetailsComplete = computed(() => {
+  const nameComplete = customerName.value.trim().length >= 2
+  const phoneComplete = normalizedCustomerPhone.value.length >= 10 && normalizedCustomerPhone.value.length <= 11
+  return isDateValid.value && nameComplete && phoneComplete && deliveryAddressComplete.value && canUseDeliveryCalculation.value
+})
+const areCustomerDetailsValid = computed(() => areCustomerDetailsComplete.value && !customerNameError.value && !customerPhoneError.value)
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)
@@ -435,6 +442,20 @@ const canShowFreeShippingSuggestionButton = computed(() =>
   isDeliveryCalculationEnabled.value &&
   !freeShippingState.value.hasMinimumSubtotal &&
   (deliveryStatus.value === 'available' || deliveryStatus.value === 'outside-area'),
+)
+
+const detailsIntroText = computed(() =>
+  deliveryMode.value === 'entrega'
+    ? 'Informe o CEP para verificarmos a entrega na sua região.'
+    : 'Confirme seus dados para reservar a retirada.',
+)
+const deliveryAddressFeedbackVisible = computed(() =>
+  deliveryMode.value === 'entrega' &&
+  (deliveryMessage.value || deliveryFee.value !== null || !isDeliveryCalculationEnabled.value),
+)
+
+const detailsFooterTotalLabel = computed(() =>
+  deliveryMode.value === 'entrega' && deliveryFee.value !== null ? 'Total estimado com frete' : 'Total estimado',
 )
 
 const formatDate = (value: string) => {
@@ -856,6 +877,22 @@ function getCheckoutProductLabel(productKey?: string) {
   return `Pudim ${flavor} • ${type}${size ? ` • ${size}` : ''}`
 }
 
+function getCheckoutProgressLabel(field?: string | null) {
+  const labels: Record<string, string> = {
+    delivery_mode_selected: 'Escolheu entrega/retirada',
+    cep_started: 'Começou pelo CEP',
+    cep_found: 'CEP encontrado',
+    delivery_calculated: 'Viu a entrega',
+    delivery_to_confirm: 'Entrega a confirmar',
+    number_filled: 'Informou número',
+    name_filled: 'Informou nome',
+    phone_filled: 'Informou telefone',
+    optional_section_opened: 'Abriu opcionais',
+    details_completed: 'Dados completos',
+  }
+  return field ? labels[field] ?? field : 'Sem progresso registrado'
+}
+
 function isCheckoutItemPromotional(item: CheckoutSessionListItem['cartItems'][number]) {
   return Boolean(item.promotion_applied)
 }
@@ -894,6 +931,7 @@ function getAdminDeliveryDetails(order: AdminOrder) {
 let deliveryDebounce: number | undefined
 let checkoutTrackingDebounce: number | undefined
 let latestDeliveryRequestId = 0
+let detailsProgressDebounce = 0
 let adminOrdersChannel: ReturnType<typeof supabase.channel> | null = null
 
 function resetDeliveryCalculation(status: DeliveryCalculationStatus = 'idle', message = '') {
@@ -927,11 +965,14 @@ async function fillAddressByCep() {
     cep.value = cepAddress.cep
     address.value = cepAddress.street || address.value
     neighborhood.value = cepAddress.neighborhood || neighborhood.value
-    city.value = cepAddress.city || city.value || 'Goiânia'
-    state.value = cepAddress.state || state.value || 'GO'
+    city.value = 'Goiânia'
+    state.value = 'GO'
+    manualAddressMode.value = false
     deliveryStatus.value = 'address-found'
     deliveryMessage.value = 'Endereço encontrado. Informe o número para calcular a entrega.'
+    trackDetailsProgress('cep_found')
   } catch {
+    manualAddressMode.value = true
     resetDeliveryCalculation('address-not-found', 'CEP não encontrado. Confira o CEP ou preencha o endereço manualmente.')
   }
 }
@@ -944,6 +985,7 @@ async function calculateDeliveryFee() {
 
   if (deliveryMode.value !== 'entrega' || !isDeliveryCalculationEnabled.value) {
     resetDeliveryCalculation('idle')
+    if (deliveryMode.value === 'entrega' && !isDeliveryCalculationEnabled.value) trackDetailsProgress('delivery_to_confirm')
     return
   }
 
@@ -973,11 +1015,13 @@ async function calculateDeliveryFee() {
     if (fee === null) {
       deliveryStatus.value = 'outside-area'
       deliveryMessage.value = 'Esse endereço está um pouco mais distante. Envie o pedido para verificarmos a entrega.'
+      trackDetailsProgress('delivery_calculated')
       return
     }
 
     deliveryStatus.value = 'available'
     deliveryMessage.value = `Entrega estimada para sua região • ${getEstimatedDeliveryTime(roundedDistance)}`
+    trackDetailsProgress('delivery_calculated')
   } catch {
     resetDeliveryCalculation('error', 'Não foi possível calcular a entrega agora. Confira o endereço ou tente novamente.')
   }
@@ -999,6 +1043,27 @@ watch([deliveryMode, cep, address, number, neighborhood, city, state, isDelivery
   deliveryDebounce = window.setTimeout(() => {
     calculateDeliveryFee()
   }, 550)
+})
+
+
+watch(deliveryMode, () => {
+  trackDetailsProgress('delivery_mode_selected')
+})
+
+watch(cep, () => {
+  if (deliveryMode.value === 'entrega' && normalizeCep(cep.value).length > 0) trackDetailsProgress('cep_started')
+})
+
+watch(number, () => {
+  if (deliveryMode.value === 'entrega' && number.value.trim()) trackDetailsProgress('number_filled')
+})
+
+watch(customerName, () => {
+  if (customerName.value.trim().length >= 2) trackDetailsProgress('name_filled')
+})
+
+watch(customerPhone, () => {
+  if (normalizedCustomerPhone.value.length >= 10) trackDetailsProgress('phone_filled')
 })
 
 watch([desiredDate, scheduledTimeOptions], () => {
@@ -1274,13 +1339,13 @@ function removeCartItem(itemId: number) {
 function confirmDetails() {
   triedSubmit.value = true
   if (!areCustomerDetailsValid.value) return
-  void trackDetailsStarted(buildCheckoutTrackingPayload(true))
+  void trackDetailsStarted(buildCheckoutTrackingPayload(true, 'details_completed'))
   openCheckoutPage()
 }
 
 
 
-function buildCheckoutTrackingPayload(includeCustomer = false) {
+function buildCheckoutTrackingPayload(includeCustomer = false, lastCompletedField: CheckoutLastCompletedField | null = null) {
   return {
     items_quantity: cartQuantity.value,
     cart_subtotal: subtotal.value,
@@ -1288,6 +1353,7 @@ function buildCheckoutTrackingPayload(includeCustomer = false) {
     fulfillment_type: deliveryMode.value === 'entrega' ? 'delivery' : deliveryMode.value === 'retirada' ? 'pickup' : null,
     customer_name: includeCustomer ? customerName.value.trim() || null : null,
     customer_phone: includeCustomer ? normalizedCustomerPhone.value || null : null,
+    last_completed_field: lastCompletedField,
     cart_items: cartItems.value.map((item) => ({
       product_id: item.productId,
       product_key: item.productKey,
@@ -1295,6 +1361,26 @@ function buildCheckoutTrackingPayload(includeCustomer = false) {
       promotion_applied: Boolean(item.promotionLabel),
     })),
   }
+}
+
+
+function trackDetailsProgress(lastCompletedField: CheckoutLastCompletedField) {
+  if (currentPage.value !== 'details' || !cartItems.value.length) return
+  window.clearTimeout(detailsProgressDebounce)
+  detailsProgressDebounce = window.setTimeout(() => {
+    void trackDetailsStarted(buildCheckoutTrackingPayload(true, lastCompletedField))
+  }, 350)
+}
+
+function openOptionalAddressFields() {
+  optionalAddressOpen.value = !optionalAddressOpen.value
+  if (optionalAddressOpen.value) trackDetailsProgress('optional_section_opened')
+}
+
+function enableManualAddressMode() {
+  manualAddressMode.value = true
+  city.value = 'Goiânia'
+  state.value = 'GO'
 }
 
 function scheduleCartTracking() {
@@ -2121,6 +2207,7 @@ onUnmounted(() => {
                   <div><small>Subtotal</small><strong>{{ formatCurrency(session.cartSubtotal) }}</strong></div>
                   <div><small>Pedido</small><strong>{{ session.orderMode === 'scheduled' ? 'Encomenda' : session.orderMode === 'ready' ? 'Pronta entrega' : '-' }}</strong></div>
                   <div><small>Recebimento</small><strong>{{ session.fulfillmentType === 'delivery' ? 'Entrega' : session.fulfillmentType === 'pickup' ? 'Retirada' : '-' }}</strong></div>
+                  <div><small>Progresso</small><strong>{{ getCheckoutProgressLabel(session.lastCompletedField) }}</strong></div>
                 </div>
 
                 <div class="admin-funnel-contact">
@@ -2499,43 +2586,19 @@ onUnmounted(() => {
 
       <template v-else-if="currentPage === 'details'">
         <section v-if="itemAdded" ref="cartSection" class="panel cart-panel">
-          <div class="section-heading">
+          <div class="section-heading details-heading">
             <div>
               <h2>Como você quer receber?</h2>
+              <small>Informe o CEP para verificarmos a entrega na sua região.</small>
+              <!-- <small>{{ detailsIntroText }}</small> -->
             </div>
           </div>
 
-          <div class="cart-form">
-            <label class="field">
-              <span>Seu Nome</span>
-              <input
-                v-model.trim="customerName"
-                type="text"
-                required
-                autocomplete="name"
-                placeholder="Seu nome"
-                :aria-invalid="Boolean(customerNameError)"
-                aria-describedby="customer-name-error"
-              />
-            </label>
-            <p v-if="customerNameError" id="customer-name-error" class="error-text">{{ customerNameError }}</p>
-
-            <label class="field">
-              <span>Telefone</span>
-              <input
-                v-model="customerPhone"
-                type="tel"
-                required
-                inputmode="tel"
-                autocomplete="tel"
-                placeholder="(62) 99999-9999"
-                maxlength="15"
-                @input="formatCustomerPhoneInput"
-                :aria-invalid="Boolean(customerPhoneError)"
-                aria-describedby="customer-phone-error"
-              />
-            </label>
-            <p v-if="customerPhoneError" id="customer-phone-error" class="error-text">{{ customerPhoneError }}</p>
+          <div class="cart-form details-form">
+            <div>
+              <span class="field-label">Forma de entrega</span>
+              <SegmentedControl v-model="deliveryMode" :options="deliveryOptions" />
+            </div>
 
             <div v-if="orderMode === 'scheduled'" class="scheduled-fields">
               <label class="field">
@@ -2564,17 +2627,12 @@ onUnmounted(() => {
             </div>
             <p v-if="dateError" id="date-error" class="error-text">{{ dateError }}</p>
 
-            <div>
-              <span class="field-label">Forma de entrega</span>
-              <SegmentedControl v-model="deliveryMode" :options="deliveryOptions" />
-            </div>
-
             <div v-if="deliveryMode === 'retirada'" class="pickup-note">
               <span>Local de retirada</span>
               <strong>{{ pickupLocation }}</strong>
             </div>
 
-            <div v-if="deliveryMode === 'entrega'" class="delivery-fields">
+            <div v-if="deliveryMode === 'entrega'" class="delivery-fields delivery-fields--compact">
               <label class="field">
                 <span>CEP</span>
                 <input
@@ -2584,40 +2642,19 @@ onUnmounted(() => {
                   autocomplete="postal-code"
                   placeholder="00000-000"
                   maxlength="9"
+                  @input="cep = formatCep(cep)"
                   @blur="fillAddressByCep"
                 />
               </label>
-              <div class="delivery-city-row">
-                <label class="field">
-                  <span>Endereço</span>
-                  <input v-model="address" type="text" autocomplete="street-address" placeholder="Rua, avenida ou alameda" />
-                </label>
-                <label class="field">
-                  <span>Número</span>
-                  <input v-model="number" type="text" inputmode="numeric" autocomplete="address-line2" placeholder="Nº" />
-                </label>
-              </div>
-              <label class="field">
-                <span>Bairro</span>
-                <input v-model="neighborhood" type="text" autocomplete="address-level2" />
-              </label>
-              <div class="delivery-city-row">
-                <label class="field">
-                  <span>Cidade</span>
-                  <input v-model="city" type="text" autocomplete="address-level1" />
-                </label>
-                <label class="field">
-                  <span>UF</span>
-                  <input v-model="state" type="text" maxlength="2" autocomplete="address-level1" />
-                </label>
-              </div>
-                            <div
-                v-if="isDeliveryCalculationEnabled && (deliveryMessage || deliveryFee !== null)"
+
+              <div
+                v-if="deliveryAddressFeedbackVisible"
                 class="delivery-status"
-                :class="`delivery-status--${deliveryStatus}`"
+                :class="isDeliveryCalculationEnabled ? `delivery-status--${deliveryStatus}` : 'delivery-status--manual'"
               >
-                <strong>Entrega {{ deliveryFeeLabel }}</strong>
-                <span v-if="deliveryStatus === 'available' && deliveryTimeLabel">Entrega estimada para sua região • {{ deliveryTimeLabel }}</span>
+                <strong>{{ isDeliveryCalculationEnabled ? `Entrega ${deliveryFeeLabel}` : 'Entrega: A confirmar' }}</strong>
+                <span v-if="!isDeliveryCalculationEnabled">Confirmaremos o valor da entrega após receber o pedido.</span>
+                <span v-else-if="deliveryStatus === 'available' && deliveryTimeLabel">Entrega estimada para sua região • {{ deliveryTimeLabel }}</span>
                 <span v-else-if="deliveryDistanceLabel">Entrega • aproximadamente {{ deliveryDistanceLabel }}</span>
                 <small
                   v-if="freeShippingMessage && (deliveryStatus === 'available' || deliveryStatus === 'outside-area')"
@@ -2632,37 +2669,103 @@ onUnmounted(() => {
                 >
                   Adicionar {{ freeShippingSuggestionQuantity }} ao pedido
                 </button>
-                <small v-if="deliveryStatus !== 'available' && deliveryMessage">{{ deliveryMessage }}</small>
+                <small v-if="isDeliveryCalculationEnabled && deliveryStatus !== 'available' && deliveryMessage">{{ deliveryMessage }}</small>
+                <button
+                  v-if="deliveryStatus === 'address-not-found'"
+                  class="manual-address-button"
+                  type="button"
+                  @click="enableManualAddressMode"
+                >
+                  Preencher endereço manualmente
+                </button>
               </div>
-              <div v-if="!isDeliveryCalculationEnabled" class="delivery-status delivery-status--manual">
-                <strong>Entrega: A confirmar</strong>
-                <!-- <span>Vamos a entrega antes de finalizar.</span> -->
+            </div>
+
+            <label class="field">
+              <span>Seu nome</span>
+              <input
+                v-model.trim="customerName"
+                type="text"
+                required
+                autocomplete="name"
+                placeholder="Seu nome"
+                :aria-invalid="Boolean(customerNameError)"
+                aria-describedby="customer-name-error"
+              />
+            </label>
+            <p v-if="customerNameError" id="customer-name-error" class="error-text">{{ customerNameError }}</p>
+
+            <label class="field">
+              <span>Telefone</span>
+              <input
+                v-model="customerPhone"
+                type="tel"
+                required
+                inputmode="tel"
+                autocomplete="tel"
+                placeholder="(62) 99999-9999"
+                maxlength="15"
+                @input="formatCustomerPhoneInput"
+                :aria-invalid="Boolean(customerPhoneError)"
+                aria-describedby="customer-phone-error customer-phone-help"
+              />
+            </label>
+            <small id="customer-phone-help" class="field-help">Usaremos este número apenas para confirmar o pedido e enviar os dados de pagamento.</small>
+            <p v-if="customerPhoneError" id="customer-phone-error" class="error-text">{{ customerPhoneError }}</p>
+
+            <div v-if="deliveryMode === 'entrega'" class="delivery-fields delivery-fields--address">
+              <div class="delivery-city-row">
+                <label class="field field--auto-filled">
+                  <span>Endereço</span>
+                  <input v-model="address" type="text" autocomplete="street-address" placeholder="Rua, avenida ou alameda" />
+                </label>
+                <label class="field">
+                  <span>Número</span>
+                  <input v-model="number" type="text" inputmode="numeric" autocomplete="address-line2" placeholder="Nº" />
+                </label>
               </div>
-              <label class="field field--wide">
-                <span>Complemento (opcional)</span>
-                <input v-model="complement" type="text" placeholder="Apartamento, bloco, lote..." />
+              <label class="field field--auto-filled">
+                <span>Bairro</span>
+                <input v-model="neighborhood" type="text" autocomplete="address-level2" placeholder="Bairro" />
               </label>
-              <label class="field field--wide">
-                <span>Ponto de referência (opcional)</span>
-                <input v-model="reference" type="text" placeholder="Próximo a..." />
-              </label>
-              <p v-if="triedSubmit && deliveryMode === 'entrega' && !deliveryAddressComplete && isDeliveryCalculationEnabled && (deliveryMessage || deliveryFee !== null)" class="error-text">
-                Informe CEP, endereço, número, bairro, cidade e UF para calcular a entrega.
+              <p v-if="triedSubmit && !deliveryAddressComplete" class="error-text">
+                Informe CEP, endereço, número e bairro para continuar.
               </p>
-              <p v-if="triedSubmit && deliveryMode === 'entrega' && deliveryAddressComplete && !canUseDeliveryCalculation" class="error-text">
+              <p v-if="triedSubmit && deliveryAddressComplete && !canUseDeliveryCalculation" class="error-text">
                 Calcule a entrega antes de continuar.
               </p>
             </div>
 
-            <label class="field">
-              <span>Observações</span>
-              <textarea
-                v-model="notes"
-                rows="4"
-                placeholder="Horário preferencial, restrições ou instruções para entrega."
-              ></textarea>
-            </label>
-
+            <div class="optional-address">
+              <button
+                class="optional-address__toggle"
+                type="button"
+                :aria-expanded="optionalAddressOpen"
+                aria-controls="optional-address-fields"
+                @click="openOptionalAddressFields"
+              >
+                <span>Adicionar complemento e observações</span>
+                <strong>{{ optionalAddressOpen ? 'Fechar' : 'Abrir' }}</strong>
+              </button>
+              <div v-show="optionalAddressOpen" id="optional-address-fields" class="optional-address__fields">
+                <label v-if="deliveryMode === 'entrega'" class="field field--wide">
+                  <span>Complemento (opcional)</span>
+                  <input v-model="complement" type="text" placeholder="Apartamento, bloco, lote..." />
+                </label>
+                <label v-if="deliveryMode === 'entrega'" class="field field--wide">
+                  <span>Ponto de referência (opcional)</span>
+                  <input v-model="reference" type="text" placeholder="Próximo a..." />
+                </label>
+                <label class="field">
+                  <span>Observações</span>
+                  <textarea
+                    v-model="notes"
+                    rows="4"
+                    placeholder="Horário preferencial, restrições ou instruções para entrega."
+                  ></textarea>
+                </label>
+              </div>
+            </div>
           </div>
         </section>
       </template>
@@ -2792,13 +2895,13 @@ onUnmounted(() => {
         <small class="text-center">Você receberá a confirmação pelo telefone informado.</small>
       </div>
 
-      <div v-if="currentPage === 'details' && itemAdded" class="mobile-checkout">
+      <div v-if="currentPage === 'details' && itemAdded" class="mobile-checkout mobile-checkout--details">
         <small v-if="freeShippingMessage && deliveryMode === 'entrega' && (deliveryStatus === 'available' || deliveryStatus === 'outside-area')" class="mobile-checkout__shipping-note">{{ freeShippingMessage }}</small>
-        <div>
-          <small>{{ deliveryMode === 'entrega' && deliveryFee !== null ? (isEligibleForFreeShipping ? 'Total com frete grátis' : 'Total com entrega') : 'Total estimado' }}</small>
+        <div class="mobile-checkout__total-single">
+          <small>{{ detailsFooterTotalLabel }}</small>
           <strong>{{ formatCurrency(total) }}</strong>
         </div>
-        <button class="mobile-checkout__button" type="button" @click="confirmDetails">
+        <button class="mobile-checkout__button" type="button" :disabled="!areCustomerDetailsComplete" @click="confirmDetails">
           Continuar
         </button>
       </div>

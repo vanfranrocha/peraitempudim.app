@@ -4,6 +4,17 @@ const checkoutSessionStorageKey = 'perai-checkout-session-id'
 
 export type CheckoutTrackingStatus = 'cart_started' | 'details_started' | 'checkout_viewed' | 'completed' | 'abandoned'
 export type CheckoutTrackingStep = 'cart' | 'details' | 'checkout' | 'success'
+export type CheckoutLastCompletedField =
+  | 'delivery_mode_selected'
+  | 'cep_started'
+  | 'cep_found'
+  | 'delivery_calculated'
+  | 'delivery_to_confirm'
+  | 'number_filled'
+  | 'name_filled'
+  | 'phone_filled'
+  | 'optional_section_opened'
+  | 'details_completed'
 
 export type CheckoutTrackingPayload = {
   status: CheckoutTrackingStatus
@@ -14,6 +25,7 @@ export type CheckoutTrackingPayload = {
   fulfillment_type: string | null
   customer_name?: string | null
   customer_phone?: string | null
+  last_completed_field?: CheckoutLastCompletedField | null
   cart_items: Array<{
     product_id: string
     product_key: string
