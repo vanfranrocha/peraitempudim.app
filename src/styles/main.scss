@@ -4251,9 +4251,9 @@ a {
 
 @media (max-width: 420px) {
   .segmented-control__button:has(.segmented-control__icon) {
-    flex-direction: column;
+    // flex-direction: column;
     gap: 5px;
-    min-height: 76px;
+    min-height: 56px;
   }
 }
 
