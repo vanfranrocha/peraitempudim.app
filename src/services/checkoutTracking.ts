@@ -30,6 +30,7 @@ export type CheckoutTrackingPayload = {
     product_id: string
     product_key: string
     quantity: number
+    promotion_applied?: boolean
   }>
 }
 

@@ -44,6 +44,7 @@ import { createOrder, type CreateOrderResult } from './services/orders'
 import { getOrCreateCheckoutSessionId, resetCheckoutSession, trackCartStarted, trackCheckoutViewed, trackDetailsStarted, type CheckoutLastCompletedField } from './services/checkoutTracking'
 import { deleteCheckoutSession, fetchCheckoutFunnelSummary, fetchCheckoutSessions, fetchRecentAbandonedCheckoutSessions, type AbandonedCheckoutSession, type CheckoutFunnelSummary, type CheckoutSessionListItem, type FunnelRange } from './services/checkoutAnalytics'
 import { applyProductsToConfig, fetchProducts, saveProductsToSupabase } from './services/products'
+import { formatBrazilianPhone, maskBrazilianPhone, normalizeBrazilianPhone, toWhatsAppPhone } from './services/phone'
 
 const appConfigStorageKey = 'perai-tem-pudim-config'
 const ordersStorageKey = 'perai-tem-pudim-orders'
@@ -328,11 +329,10 @@ const customerNameError = computed(() => {
   if (customerName.value.trim().length < 2) return 'Informe um nome válido.'
   return ''
 })
-const normalizedCustomerPhone = computed(() => customerPhone.value.replace(/\D/g, ''))
+const normalizedCustomerPhone = computed(() => normalizeBrazilianPhone(customerPhone.value) ?? '')
 const customerPhoneError = computed(() => {
   if (!triedSubmit.value) return ''
-  if (!normalizedCustomerPhone.value) return 'Informe um telefone para confirmarmos o pedido.'
-  if (normalizedCustomerPhone.value.length < 10 || normalizedCustomerPhone.value.length > 11) return 'Informe um telefone válido com DDD.'
+  if (!normalizedCustomerPhone.value) return 'Informe um telefone válido com DDD.'
   return ''
 })
 const isDateValid = computed(() => getDateError() === '')
@@ -370,7 +370,7 @@ const canUseDeliveryCalculation = computed(() =>
 )
 const areCustomerDetailsComplete = computed(() => {
   const nameComplete = customerName.value.trim().length >= 2
-  const phoneComplete = normalizedCustomerPhone.value.length >= 10 && normalizedCustomerPhone.value.length <= 11
+  const phoneComplete = Boolean(normalizedCustomerPhone.value)
   return isDateValid.value && nameComplete && phoneComplete && deliveryAddressComplete.value && canUseDeliveryCalculation.value
 })
 const areCustomerDetailsValid = computed(() => areCustomerDetailsComplete.value && !customerNameError.value && !customerPhoneError.value)
@@ -382,21 +382,6 @@ const formatOrderNumber = (orderNumber: number | string) => {
   const numeric = Number(orderNumber)
   if (!Number.isFinite(numeric)) return `PUD-${String(orderNumber)}`
   return `PUD-${String(numeric).padStart(6, '0')}`
-}
-
-const formatBrazilianPhone = (phone: string) => {
-  const digits = phone.replace(/\D/g, '')
-  if (digits.length === 11) return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`
-  if (digits.length === 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`
-  return digits || phone
-}
-
-const maskBrazilianPhone = (value: string) => {
-  const digits = value.replace(/\D/g, '').slice(0, 11)
-  if (digits.length <= 2) return digits ? `(${digits}` : ''
-  if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`
-  if (digits.length <= 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`
-  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`
 }
 
 function formatCustomerPhoneInput(event: Event) {
@@ -803,9 +788,8 @@ function getAdminOrderItemDetails(item: AdminOrder['items'][number]) {
 }
 
 function getAdminOrderWhatsappUrl(order: AdminOrder) {
-  const phone = order.customerPhone.replace(/\D/g, '')
-  if (!phone) return ''
-  const normalized = phone.startsWith('55') ? phone : `55${phone}`
+  const normalized = toWhatsAppPhone(order.customerPhone)
+  if (!normalized) return ''
   const message = `Oi, ${order.customerName}! Recebemos seu pedido ${formatOrderNumber(order.orderNumber)} do Peraí, tem pudim! 🍮`
   return `https://wa.me/${normalized}?text=${encodeURIComponent(message)}`
 }
@@ -871,9 +855,8 @@ function getCheckoutStatusLabel(status: string) {
 }
 
 function getCheckoutSessionWhatsappUrl(session: CheckoutSessionListItem) {
-  const phone = session.customerPhone?.replace(/\D/g, '')
-  if (!phone) return ''
-  const normalized = phone.startsWith('55') ? phone : `55${phone}`
+  const normalized = session.customerPhone ? toWhatsAppPhone(session.customerPhone) : ''
+  if (!normalized) return ''
   const name = session.customerName ? `, ${session.customerName}` : ''
   const message = `Oi${name}! Aqui é do Peraí, tem pudim! 🍮 Vi que você começou um pedido por aqui. Posso te ajudar a finalizar?`
   return `https://wa.me/${normalized}?text=${encodeURIComponent(message)}`
