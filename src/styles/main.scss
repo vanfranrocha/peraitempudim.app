@@ -1644,6 +1644,14 @@ a {
   font-weight: 800;
 }
 
+.address-suggestions__attribution {
+  justify-self: end;
+  padding: 0 4px 2px;
+  color: rgba(53, 23, 15, 0.42);
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
 .manual-address-link {
   justify-self: start;
   border: 0;
@@ -4886,7 +4894,7 @@ a {
 
 .success-panel {
   padding-top: 18px;
-  padding-bottom: 32px;
+  padding-bottom: 132px;
 }
 
 .success-card {
@@ -5143,6 +5151,62 @@ a {
   line-height: 1.25;
 }
 
+.success-whatsapp-card {
+  position: sticky;
+  z-index: 20;
+  bottom: 14px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid rgba(37, 211, 102, 0.2);
+  border-radius: 16px;
+  padding: 10px 12px;
+  background: rgba(249, 255, 250, 0.96);
+  box-shadow: 0 18px 38px rgba(53, 23, 15, 0.14);
+  backdrop-filter: blur(10px);
+}
+
+.success-whatsapp-card span {
+  display: inline-flex;
+  width: fit-content;
+  margin-bottom: 3px;
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: rgba(37, 211, 102, 0.12);
+  color: #16745f;
+  font-size: 0.68rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.success-whatsapp-card h3 {
+  margin: 0;
+  color: var(--brown-dark);
+  font-size: 0.98rem;
+  line-height: 1.1;
+}
+
+.success-whatsapp-card p {
+  margin-top: 3px;
+  color: rgba(53, 23, 15, 0.66);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.success-whatsapp-button {
+  min-width: 148px;
+  min-height: 46px;
+  border: 0;
+  border-radius: 13px;
+  padding: 0 16px;
+  background: #25d366;
+  color: #ffffff;
+  font-size: 0.88rem;
+  font-weight: 950;
+  box-shadow: 0 14px 24px rgba(37, 211, 102, 0.22);
+}
+
 .success-actions {
   display: grid;
   gap: 10px;
@@ -5164,6 +5228,16 @@ a {
   .success-card {
     padding: 18px;
     border-radius: 22px;
+  }
+
+  .success-whatsapp-card {
+    grid-template-columns: 1fr;
+    bottom: 10px;
+    padding: 10px;
+  }
+
+  .success-whatsapp-button {
+    width: 100%;
   }
 
   .success-card__hero {

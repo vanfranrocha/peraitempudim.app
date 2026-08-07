@@ -32,7 +32,7 @@ import {
   normalizeCep,
   type Coordinates,
 } from './services/delivery'
-import { getAddressDetails, searchAddresses, type AddressSuggestion } from './services/addressAutocomplete'
+import { AddressAutocompleteError, getAddressDetails, searchAddresses, type AddressSuggestion } from './services/addressAutocomplete'
 import {
   FREE_SHIPPING_MAX_DISTANCE_KM,
   FREE_SHIPPING_SMALL_ORDER_MAX_DISTANCE_KM,
@@ -49,8 +49,15 @@ import { deleteCheckoutSession, fetchCheckoutFunnelSummary, fetchCheckoutSession
 import { applyProductsToConfig, fetchProducts, saveProductsToSupabase } from './services/products'
 import { formatBrazilianPhone, maskBrazilianPhone, normalizeBrazilianPhone, toWhatsAppPhone } from './services/phone'
 
+declare global {
+  interface Window {
+    fbq?: (action: string, eventName: string, params?: Record<string, unknown>) => void
+  }
+}
+
 const appConfigStorageKey = 'perai-tem-pudim-config'
 const ordersStorageKey = 'perai-tem-pudim-orders'
+const storeWhatsappNumber = '5563992916364'
 
 type OrderMode = 'ready' | 'scheduled'
 type DeliveryCalculationStatus =
@@ -276,11 +283,40 @@ let authSubscription: { unsubscribe: () => void } | null = null
 
 const loadingPhrases = ['produção artesanal', 'Sob encomenda e pronta entrega', 'feito com calma e carinho']
 
-const todayIso = computed(() => new Date().toISOString().slice(0, 10))
+function formatLocalDateIso(date: Date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function addDays(date: Date, days: number) {
+  const nextDate = new Date(date)
+  nextDate.setDate(nextDate.getDate() + days)
+  return nextDate
+}
+
+const todayIso = computed(() => formatLocalDateIso(new Date()))
+const cartHasScheduledOnlyItems = computed(() =>
+  cartItems.value.some((item) => appConfig.value.productOrderModes[item.productKey]?.ready === false),
+)
+const scheduledMinDateIso = computed(() => {
+  const minimumDaysAhead = cartHasScheduledOnlyItems.value ? 2 : 1
+  let date = addDays(new Date(), minimumDaysAhead)
+
+  for (let attempts = 0; attempts < 14; attempts += 1) {
+    const dateIso = formatLocalDateIso(date)
+    const dayConfig = getOpeningHoursForDate(dateIso)
+    if (dayConfig?.open && parseHourRange(dayConfig.hours)) return dateIso
+    date = addDays(date, 1)
+  }
+
+  return formatLocalDateIso(addDays(new Date(), minimumDaysAhead))
+})
 const maxDateIso = computed(() => {
   const date = new Date()
   date.setFullYear(date.getFullYear() + 1)
-  return date.toISOString().slice(0, 10)
+  return formatLocalDateIso(date)
 })
 const scheduledTimeOptions = computed(() => {
   if (orderMode.value !== 'scheduled' || !desiredDate.value) return []
@@ -326,7 +362,7 @@ function getDateError() {
   if (orderMode.value === 'ready') return ''
   if (!desiredDate.value) return 'Escolha a data desejada para sua encomenda.'
   if (!/^\d{4}-\d{2}-\d{2}$/.test(desiredDate.value)) return 'Informe uma data válida.'
-  if (desiredDate.value < todayIso.value) return 'Escolha uma data a partir de hoje.'
+  if (desiredDate.value < scheduledMinDateIso.value) return `Escolha uma data a partir de ${formatDate(scheduledMinDateIso.value)}.`
   if (desiredDate.value > maxDateIso.value) return 'Escolha uma data dentro dos próximos 12 meses.'
   if (!scheduledTimeOptions.value.length) return 'Não há horários disponíveis para a data escolhida.'
   if (!desiredTimeSlot.value) return 'Escolha o horário desejado para sua encomenda.'
@@ -833,6 +869,25 @@ function getAdminOrderWhatsappUrl(order: AdminOrder) {
   return `https://wa.me/${normalized}?text=${encodeURIComponent(message)}`
 }
 
+function openSuccessWhatsappContact() {
+  if (!currentCreatedOrder.value) return
+
+  const formattedOrderNumber = formatOrderNumber(currentCreatedOrder.value.order_number)
+  const message = `Oi! Acabei de fazer o pedido ${formattedOrderNumber} pelo site e gostaria de agilizar a confirmação. 🍮`
+  const whatsappUrl = `https://wa.me/${storeWhatsappNumber}?text=${encodeURIComponent(message)}`
+
+  try {
+    window.fbq?.('trackCustom', 'success_whatsapp_clicked', {
+      order_id: currentCreatedOrder.value.order_id,
+      order_number: formattedOrderNumber,
+    })
+  } catch (error) {
+    console.warn('[Peraí, tem pudim!] Tracking de WhatsApp indisponível.', error)
+  }
+
+  window.open(whatsappUrl, '_blank', 'noopener,noreferrer')
+}
+
 function getAdminOrderDateLabel(order: AdminOrder) {
   const date = order.requestedDate ? formatDate(order.requestedDate) : 'Sem data'
   return order.requestedTime ? `${date} • ${order.requestedTime}` : date
@@ -1220,15 +1275,29 @@ watch(addressSearchQuery, () => {
       if (latestAddressSearchRequestId !== requestId) return
       addressSuggestions.value = suggestions
       addressSuggestionsOpen.value = true
-    } catch {
+    } catch (error) {
       if (latestAddressSearchRequestId !== requestId) return
-      addressSearchError.value = 'Não foi possível buscar endereços agora.'
+      if (error instanceof AddressAutocompleteError) {
+        if (error.code === 'missing-key') {
+          addressSearchError.value = 'Busca de endereço não configurada. Você pode preencher manualmente.'
+        } else if (error.code === 'invalid-key') {
+          addressSearchError.value = 'Busca de endereço indisponível por configuração. Você pode preencher manualmente.'
+        } else if (error.code === 'rate-limit') {
+          addressSearchError.value = 'Limite de buscas atingido no momento. Você pode preencher manualmente.'
+        } else if (error.code === 'network') {
+          addressSearchError.value = 'Falha de conexão ao buscar endereços. Você pode preencher manualmente.'
+        } else {
+          addressSearchError.value = 'Não foi possível buscar endereços agora. Você pode preencher manualmente.'
+        }
+      } else {
+        addressSearchError.value = 'Não foi possível buscar endereços agora. Você pode preencher manualmente.'
+      }
       addressSuggestions.value = []
       addressSuggestionsOpen.value = true
     } finally {
       if (latestAddressSearchRequestId === requestId) addressSearchLoading.value = false
     }
-  }, 380)
+  }, 400)
 })
 
 watch(customerName, () => {
@@ -1239,8 +1308,12 @@ watch(customerPhone, () => {
   if (normalizedCustomerPhone.value.length >= 10) trackDetailsProgress('phone_filled')
 })
 
-watch([desiredDate, scheduledTimeOptions], () => {
+watch([desiredDate, scheduledTimeOptions, scheduledMinDateIso], () => {
   if (orderMode.value !== 'scheduled') return
+  if (desiredDate.value && desiredDate.value < scheduledMinDateIso.value) {
+    desiredDate.value = scheduledMinDateIso.value
+    return
+  }
   if (!scheduledTimeOptions.value.includes(desiredTimeSlot.value)) {
     desiredTimeSlot.value = scheduledTimeOptions.value[0] ?? ''
   }
@@ -1429,8 +1502,8 @@ function selectOrderMode(nextMode: OrderMode) {
   if (nextMode === 'ready') {
     desiredDate.value = todayIso.value
     desiredTimeSlot.value = ''
-  } else if (!desiredDate.value) {
-    desiredDate.value = todayIso.value
+  } else if (!desiredDate.value || desiredDate.value < scheduledMinDateIso.value) {
+    desiredDate.value = scheduledMinDateIso.value
   }
   openOrderPage(sizeSection.value)
 }
@@ -2830,7 +2903,7 @@ onUnmounted(() => {
                   type="date"
                   data-details-field="date"
                   required
-                  :min="todayIso"
+                  :min="scheduledMinDateIso"
                   :max="maxDateIso"
                   :aria-invalid="Boolean(dateError)"
                   aria-describedby="date-error"
@@ -2889,6 +2962,7 @@ onUnmounted(() => {
                   <p v-if="addressSearchLoading" class="address-suggestions__state">Buscando endereços...</p>
                   <p v-else-if="addressSearchError" class="address-suggestions__state">{{ addressSearchError }}</p>
                   <p v-else-if="addressSearchQuery.length >= 3 && !addressSuggestions.length" class="address-suggestions__state">Nenhum endereço encontrado.</p>
+                  <small class="address-suggestions__attribution">Powered by Geoapify</small>
                 </div>
                 <button class="manual-address-link" type="button" @click="enableManualAddressMode">Não encontrou seu endereço?</button>
               </div>
@@ -3126,7 +3200,7 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <p class="success-card__message">Agora vamos verificar a disponibilidade e entrar em contato para confirmar o pedido e o pagamento.</p>
+            <p class="success-card__message">Entraremos em contato pelo telefone informado para confirmar o pedido.</p>
 
             <div v-if="currentCreatedOrder" class="success-summary">
               <div class="success-summary__highlight">
@@ -3154,6 +3228,17 @@ onUnmounted(() => {
                   <span>{{ typeLabels[item.puddingType] }} • {{ sizeLabels[item.size] }} • {{ formatCurrency(item.total) }}</span>
                 </div>
               </article>
+            </div>
+
+            <div v-if="currentCreatedOrder" class="success-whatsapp-card">
+              <div>
+                <span>Opcional</span>
+                <h3>Quer agilizar?</h3>
+                <p>Seu pedido já foi recebido. Fale pelo WhatsApp para confirmar mais rápido.</p>
+              </div>
+              <button class="success-whatsapp-button" type="button" @click="openSuccessWhatsappContact">
+                Falar no WhatsApp
+              </button>
             </div>
 
             <div class="success-actions">
