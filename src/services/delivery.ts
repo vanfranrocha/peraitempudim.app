@@ -192,3 +192,14 @@ export async function getDeliveryDistance(originAddress: string, destinationAddr
     provider: 'haversine',
   }
 }
+
+export async function getDeliveryDistanceToCoordinates(originAddress: string, destination: Coordinates): Promise<DeliveryDistanceResult> {
+  const origin = originAddress === deliveryOriginAddress ? deliveryOriginCoordinates : await geocodeAddress(originAddress)
+
+  return {
+    distanceKm: haversineDistanceKm(origin, destination),
+    origin,
+    destination,
+    provider: 'haversine',
+  }
+}
